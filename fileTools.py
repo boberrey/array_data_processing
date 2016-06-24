@@ -1,8 +1,10 @@
 
 """
-Tools for working with CP files
+Tools for working with CP__ files
 
 Some functions taken from Sarah's IMlibs.py
+Others taken from Curtis' CPlibs and/or CPscripts
+Some made by me
 
 Ben Ober-Reynolds
 """
@@ -94,7 +96,7 @@ def makeTileDict_multiple(fileList, directory):
             sys.exit()
         else:
             # May need to fix this somewhere down the line to sort by time
-            # A quick test seems to show that python is auto-sorting by timestamp, which is nice but perhaps not the most rigourous thing?
+            # A quick test seems to show that python is auto-sorting by timestamp, which is nice but perhaps not the most rigourous thing
             if tile in fileDict:
                 fileDict[tile].append(os.path.join(directory, f))
             else:
@@ -108,7 +110,7 @@ def generateCPseriesFiles(cpSeqFilename, allRNA, bindingSeries, CPseriesFilename
     Inputs: CP seq filename, list of binding series CPfluors, CPseries filename, tile, all RNA CPfluor filename (optional)
     Output: writes the CPseries file
     """
-    # Get the number of lines in the CPseq file. Currently assumes all files will have the same number of lines...
+    # Get the number of lines in the CPseq file. Currently assumes all files will have the same number of lines
     numLines = int(subprocess.check_output(("wc -l {} | ".format(cpSeqFilename)+" awk \'{print $1}\'"), shell=True).strip())
     # First get the all RNA values, if present
     if os.path.isfile(allRNA):
@@ -158,6 +160,8 @@ def getSignalFromCPFluor(CPfluorfilename):
     """
     From Sarah's IMlibs.py: calculates the signal values from a given CPfluor file.
     Volume under a 2D gaussian function given by 2*pi*Amplitude*sigma_x*sigma_y
+    Input: CPfluor filename
+    Output: np.array of calculated signals (i.e. volume under 2D gaussian) 
     """
     fitResults = pd.read_csv(CPfluorfilename, usecols=range(7, 12), sep=':', header=None, names=['success', 'amplitude', 'sigma', 'fit_X', 'fit_Y'] )
     signal = np.array(2*np.pi*fitResults['amplitude']*fitResults['sigma']*fitResults['sigma'])
