@@ -16,7 +16,7 @@
 import sys
 import os
 import argparse
-import fileTools
+import cpfiletools
 import random
 import string
 import subprocess
@@ -67,7 +67,7 @@ def main():
 	# This script will run through each of the provided CPseries files sequentially in order to 
 	# ensure that each variant gets assigned only one variant ID.
 
-	CPseriesFiles = fileTools.findFilesInDirectory(args.series_directory, ['CPseries'])
+	CPseriesFiles = cpfiletools.find_files_in_directory(args.series_directory, ['CPseries'])
 
 	numLines = 0
 	for seriesFile in CPseriesFiles:
@@ -123,7 +123,7 @@ def main():
 				IDs.append(newID)
 				variantDict[seq] = [newID, series_df.iloc[row, 1] ,1]
 			# Curtis' cool progress bar:
-			fileTools.update_progress(row, total_rows)
+			cpfiletools.update_progress(row, total_rows)
 
 		# Add in new ID column: (currently puts it next to the filter column)
 		series_df.insert(loc=2, column="IDs", value=IDs)

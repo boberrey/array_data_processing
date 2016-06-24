@@ -15,7 +15,7 @@
 import sys
 import os
 import argparse
-import fileTools
+import cpfiletools
 from joblib import Parallel, delayed
 
 
@@ -55,7 +55,7 @@ def main():
 	print "Finding CPseq files in directory {}...".format(args.filtered_CPseqs)
 
 	# Gather all of the CPseq files in the 'filtered_CPseqs' file directory
-	CPseqFilenames = fileTools.findFilesInDirectory(args.filtered_CPseqs, ['CPseq'])
+	CPseqFilenames = cpfiletools.find_files_in_directory(args.filtered_CPseqs, ['CPseq'])
 	if len(CPseqFilenames) < 1:
 		print "Error: No CPseq files found in directory: " + args.filtered_CPseqs
 		sys.exit()
@@ -63,29 +63,29 @@ def main():
 	print "Found CPseq files: "
 	printList(CPseqFilenames)
 	# Create a dictionary of the CPseq files keyed by tile
-	CPseqDict = fileTools.makeTileDict(CPseqFilenames, args.filtered_CPseqs)
+	CPseqDict = cpfiletools.make_tile_dict(CPseqFilenames, args.filtered_CPseqs)
 	tileList = CPseqDict.keys()
 
 	# Gather all of the CPfluor files for all RNA images, if provided
 	allRNA_Dict = {}
 	if args.allRNA != '':
 		print "Finding allRNA CPfluor files in directory {}...".format(args.allRNA)
-		allRNAfilenames = fileTools.findFilesInDirectory(args.allRNA, ['CPfluor'])
+		allRNAfilenames = cpfiletools.find_files_in_directory(args.allRNA, ['CPfluor'])
 		print "Found allRNA files: "
 		printList(allRNAfilenames)
 		if len(allRNAfilenames) < 1:
 			print "Error: no CPfluor files found in directory: " + args.allRNA
-		allRNA_Dict = fileTools.makeTileDict(allRNAfilenames, args.allRNA)
+		allRNA_Dict = cpfiletools.make_tile_dict(allRNAfilenames, args.allRNA)
 	else:
 		for tile in tileList:
 			allRNA_Dict[tile] = ''
 
 	# Gather all of the CPfluor files for creating the cluster binding series
 	print "Finding binding series CPfluor files in directory {}...".format(args.bsCPfluors)
-	bindingSeriesList = fileTools.findFilesInDirectory(args.bsCPfluors, ['CPfluor'])
+	bindingSeriesList = cpfiletools.find_files_in_directory(args.bsCPfluors, ['CPfluor'])
 	print "Found CPfluor files: "
 	printList(bindingSeriesList)
-	bindingSeriesDict = fileTools.makeTileDict_multiple(bindingSeriesList, args.bsCPfluors)
+	bindingSeriesDict = cpfiletools.make_tile_dict_multiple(bindingSeriesList, args.bsCPfluors)
 
 
 
@@ -108,7 +108,7 @@ def main():
 	# Make CPseries files in parallel:
 	print "Making CPseries files..."
 	(Parallel(n_jobs=numCores, verbose = 10)
-		(delayed(fileTools.generateCPseriesFiles)
+		(delayed(cpfiletools.generate_CPseries_files)
 			(CPseqDict[tile], 
 			allRNA_Dict[tile], 
 			bindingSeriesDict[tile], 

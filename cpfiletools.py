@@ -1,6 +1,6 @@
 
 """
-Tools for working with CP__ files
+Tools for working with 'CP__' files
 
 Some functions taken from Sarah's IMlibs.py
 Others taken from Curtis' CPlibs and/or CPscripts
@@ -20,7 +20,7 @@ import uuid
 import subprocess
 
 
-def getTileNumberFromFilename(inFilename):
+def get_tile_number_from_filename(inFilename):
     """
     Extract the tile number from a provided filename based on the presence of
     'tile###'
@@ -37,7 +37,8 @@ def getTileNumberFromFilename(inFilename):
     return tileNumber
 
 
-def findFilesInDirectory(dirPath, extensionList=None, excludedExtensionList=None):
+def find_files_in_directory(dirPath, extensionList=None, 
+                            excludedExtensionList=None):
     """
     Locate files in a given directory path. Optionally, desired files are 
     identified as matching one of the extension types provided in 
@@ -45,7 +46,7 @@ def findFilesInDirectory(dirPath, extensionList=None, excludedExtensionList=None
     Input: directory path, list of approved extensions, (list of excluded extensions)
     Output: List of found files 
     """
-    def extensionMatch(filename, extensionList=None):
+    def extension_match(filename, extensionList=None):
         # from CPlibs
         if extensionList is not None:
             for currExt in extensionList:
@@ -56,7 +57,8 @@ def findFilesInDirectory(dirPath, extensionList=None, excludedExtensionList=None
     dirList = os.listdir(dirPath)
     fileList = []
     for currFilename in dirList:
-        if extensionMatch(currFilename, extensionList) and not extensionMatch(currFilename, excludedExtensionList):
+        if (extension_match(currFilename, extensionList) 
+            and not extension_match(currFilename, excludedExtensionList)):
             fileList.append(currFilename)
     if len(dirList) == 0:
         print '\tNONE FOUND'
@@ -65,7 +67,7 @@ def findFilesInDirectory(dirPath, extensionList=None, excludedExtensionList=None
         #    print "found:\t\t{}".format(filename)
         return fileList
 
-def makeTileDict(fileList, directory):
+def make_tile_dict(fileList, directory):
     """
     Make a dictionary of files keyed by tile number.  
     Input: list of files containing tile numbers
@@ -73,7 +75,7 @@ def makeTileDict(fileList, directory):
     """
     fileDict = {}
     for f in fileList:
-        tile = getTileNumberFromFilename(f)
+        tile = get_tile_number_from_filename(f)
         if tile == '':
             print "Error: no tile number in file: "+ f
             sys.exit()
@@ -84,7 +86,7 @@ def makeTileDict(fileList, directory):
             fileDict[tile] = os.path.join(directory, f)
     return fileDict
 
-def makeTileDict_multiple(fileList, directory):
+def make_tile_dict_multiple(fileList, directory):
     """
     Make a dictionary of files keyed by tile number, where each tile has multiple files.  
     Input: list of files containing tile numbers
@@ -92,13 +94,14 @@ def makeTileDict_multiple(fileList, directory):
     """
     fileDict = {}
     for f in fileList:
-        tile = getTileNumberFromFilename(f)
+        tile = get_tile_number_from_filename(f)
         if tile == '':
             print "Error: no tile number in file: "+ f
             sys.exit()
         else:
             # May need to fix this somewhere down the line to sort by time
-            # A quick test seems to show that python is auto-sorting by timestamp, which is nice but perhaps not the most rigourous thing
+            # A quick test seems to show that python is auto-sorting by
+            # timestamp, which is nice but perhaps not the most rigourous thing
             if tile in fileDict:
                 fileDict[tile].append(os.path.join(directory, f))
             else:
@@ -106,17 +109,23 @@ def makeTileDict_multiple(fileList, directory):
     return fileDict
 
 
-def generateCPseriesFiles(cpSeqFilename, allRNA, bindingSeries, CPseriesFilename, tile):
+def generate_CPseries_files(cpSeqFilename, allRNA, bindingSeries, 
+                            CPseriesFilename, tile):
     """
-    Generate a CPseries file from the appropriate CPseq data, binding series, and optionally all RNA data.
-    Inputs: CP seq filename, list of binding series CPfluors, CPseries filename, tile, all RNA CPfluor filename (optional)
+    Generate a CPseries file from the appropriate CPseq data, binding series, 
+    and optionally all RNA data.
+    Inputs: CP seq filename, list of binding series CPfluors, 
+    CPseries filename, tile, all RNA CPfluor filename (optional)
     Output: writes the CPseries file
     """
-    # Get the number of lines in the CPseq file. Currently assumes all files will have the same number of lines
-    numLines = int(subprocess.check_output(("wc -l {} | ".format(cpSeqFilename)+" awk \'{print $1}\'"), shell=True).strip())
+    # Get the number of lines in the CPseq file. Currently assumes all files
+    # will have the same number of lines
+    numLines = int(subprocess.check_output(
+        ("wc -l {} | ".format(cpSeqFilename)
+        +" awk \'{print $1}\'"), shell=True).strip())
     # First get the all RNA values, if present
     if os.path.isfile(allRNA):
-        allRNAsignal = getSignalFromCPFluor(allRNA)
+        allRNAsignal = get_signal_from_CPFluor(allRNA)
     else:
         allRNAsignal = np.ones(numLines)*np.nan
 
@@ -125,15 +134,17 @@ def generateCPseriesFiles(cpSeqFilename, allRNA, bindingSeries, CPseriesFilename
 
     for i, fluor in enumerate(bindingSeries):
         if os.path.isfile(fluor):
-            bindingSeriesSignal[:,i] = getSignalFromCPFluor(fluor)
+            bindingSeriesSignal[:,i] = get_signal_from_CPFluor(fluor)
         else:
             bindingSeriesSignal[:,i] = np.ones(numLines)*np.nan
     # Combine binding series signals:
-    bs_comma_format = np.array([','.join(bindingSeriesSignal[i].astype(str)) for i in range(numLines)])
+    bs_comma_format = np.array(
+        [','.join(bindingSeriesSignal[i].astype(str)) for i in range(numLines)])
     
     # read in CPseq file as a pandas dataframe
     cp_seq = pd.read_table(cpSeqFilename, header=None)
-    # Here is where we can decide which components of the CPseq file we want to carry over into the CPseries file:
+    # Here is where we can decide which components of the CPseq file we want
+    # to carry over into the CPseries file:
     """
     CPseq columns:
     0: ClusterID
@@ -149,8 +160,10 @@ def generateCPseriesFiles(cpSeqFilename, allRNA, bindingSeries, CPseriesFilename
     """
     CPseriesframe = cp_seq.iloc[:,[0,1,2,4,6,8]]
 
-    # create new dataframe with signal data, then concatenate the two dataframes together
-    signal_df = pd.DataFrame({'allRNA': allRNAsignal, 'bindingSeriesSignal': bs_comma_format}, dtype=str)
+    # create new dataframe with signal data, 
+    # then concatenate the two dataframes together
+    signal_df = pd.DataFrame({'allRNA': allRNAsignal, 
+        'bindingSeriesSignal': bs_comma_format}, dtype=str)
     final_df = pd.concat([CPseriesframe, signal_df], axis=1)
     # Save data
     np.savetxt(CPseriesFilename, final_df.values, fmt='%s', delimiter='\t')
@@ -158,24 +171,30 @@ def generateCPseriesFiles(cpSeqFilename, allRNA, bindingSeries, CPseriesFilename
 
 
 
-def getSignalFromCPFluor(CPfluorfilename):
+def get_signal_from_CPFluor(CPfluorfilename):
     """
-    From Sarah's IMlibs.py: calculates the signal values from a given CPfluor file.
-    Volume under a 2D gaussian function given by 2*pi*Amplitude*sigma_x*sigma_y
+    From Sarah's IMlibs.py: calculates the signal values from a given 
+    CPfluor file.
+    Volume under a 2D gaussian function given by 
+    2*pi*Amplitude*sigma_x*sigma_y
     Input: CPfluor filename
     Output: np.array of calculated signals (i.e. volume under 2D gaussian) 
     """
-    fitResults = pd.read_csv(CPfluorfilename, usecols=range(7, 12), sep=':', header=None, names=['success', 'amplitude', 'sigma', 'fit_X', 'fit_Y'] )
+    fitResults = pd.read_csv(
+        CPfluorfilename, usecols=range(7, 12), 
+        sep=':', header=None, 
+        names=['success', 'amplitude', 'sigma', 'fit_X', 'fit_Y'] )
     signal = np.array(2*np.pi*fitResults['amplitude']*fitResults['sigma']*fitResults['sigma'])
     signal[np.array(fitResults['success']==0)] = np.nan
     return signal
 
 
 
-def parseTimeStampFromFilename(filename):
+def parse_timestamp_from_filename(filename):
     """
-    Extract the time stamp from a provided filename, assuming the timestamp is at the end of the file
-    and separated from the rest of the filename by a '_'
+    Extract the time stamp from a provided filename, assuming the timestamp 
+    is at the end of the file and separated from the rest of the filename 
+    by a '_'
     Input: filename (string)
     Output: timestamp object
     """
@@ -185,27 +204,33 @@ def parseTimeStampFromFilename(filename):
         date, time = timestamp.split('-')
         year, month, day = np.array(date.split('.'), dtype=int)
         hour, minute, second, ms = np.array(time.split('.'), dtype=int)
-        timestamp_object = datetime.datetime(year=year, month=month, day=day, hour=hour, minute=minute, second=second, microsecond=ms*1000)
+        timestamp_object = datetime.datetime(
+            year=year, month=month, day=day, hour=hour, minute=minute, 
+            second=second, microsecond=ms*1000)
     except ValueError:
         print "ERROR: no timestamp on file: {}".format(filename)
         sys.exit()
     return timestamp_object
 
-def getTimeDelta(timestamp_final, timestamp_initial):
+def get_time_delta(timestamp_final, timestamp_initial):
     """
     Get the time delta in seconds
     """
-    return (timestamp_final - timestamp_initial).seconds + (timestamp_final - timestamp_initial).microseconds/1E6
+    return (timestamp_final - timestamp_initial).seconds + (timestamp_final
+            - timestamp_initial).microseconds/1E6
 
 
-def spawnMatlabJob(matlabFunctionCallString,tempPaths):
+def spawn_matlab_job(matlabFunctionCallString,tempPaths):
     """
     From CPlibs.py
     Spawn a matlab job by correctly formatting command-line call.
     Inputs: formatted string of matlab function to call, temporary paths to use
     Output: call the matlab function
 
-    *note: this version differs from the original spawnMatlabJob by requiring three new paths
+    *note: this version differs from the original spawnMatlabJob 
+    by requiring three new paths
+
+    *Warning: this function probably needs some work*
     """
     try:
         #construct the command-line matlab call 
@@ -246,40 +271,46 @@ def spawnMatlabJob(matlabFunctionCallString,tempPaths):
         # return log
         return logString
     except Exception, e:
-        return 'Python exception generated in spawnMatlabJob: ' + e.message
+        return 'Python exception generated in spawn_matlab_job: ' + e.message
 
-def getRegistrationOffset(CPseqFilename, imageFilename, dataScaling, filterSubsets, tempPaths):
+def get_registration_offset(CPseqFilename, imageFilename, dataScaling, 
+                            filterSubsets, tempPaths):
     try:
         matlabFunctionCallString = "GenerateRegistrationOffsetMap('{0}','{1}','{2}',{3},'','','');".format(CPseqFilename, imageFilename, dataScaling, filterSubsets)
         #print matlabFunctionCallString
-        logString = spawnMatlabJob_ben(matlabFunctionCallString,tempPaths)
+        logString = spawn_matlab_job(matlabFunctionCallString,tempPaths)
         return (CPseqFilename,logString)
     except Exception,e:
         return(CPseqFilename,'Python excpetion generated in getRegistrationOffset: ' + e.message)
 
-def analyseImage(CPseqFilename, imageFilename, dataScaling, filterSubsets, registrationOffsetMapFilename, tempPaths):
+def analyse_image(CPseqFilename, imageFilename, dataScaling, filterSubsets, 
+                registrationOffsetMapFilename, tempPaths):
     try:
         matlabFunctionCallString = "AnalyseImage('{0}','{1}','{2}', {3}, '{4}','','');".format(CPseqFilename, imageFilename, dataScaling, filterSubsets, registrationOffsetMapFilename)
         #print matlabFunctionCallString
-        logString = spawnMatlabJob_ben(matlabFunctionCallString,tempPaths)
+        logString = spawn_matlab_job(matlabFunctionCallString,tempPaths)
         return (CPseqFilename,logString)
     except Exception,e:
         return(CPseqFilename,'Python excpetion generated in quantifyFluorescence: ' + e.message)
 
 
-def analyseSeries(seqDataFilename, imageListFilename, darkImageIndex, registrationImageIndex, dataScaling, filterSubsets, workingPath, tempPaths):
+def analyse_series(seqDataFilename, imageListFilename, darkImageIndex, 
+                registrationImageIndex, dataScaling, filterSubsets, 
+                workingPath, tempPaths):
     try:
         matlabFunctionCallString = "AnalyseSeries('{0}','{1}',{2},{3},'{4}',{5},'{6}');".format(
-            seqDataFilename, imageListFilename, darkImageIndex, registrationImageIndex, dataScaling, filterSubsets, workingPath)
+            seqDataFilename, imageListFilename, darkImageIndex, 
+            registrationImageIndex, dataScaling, filterSubsets, workingPath)
         #print matlabFunctionCallString
-        logString = spawnMatlabJob_ben(matlabFunctionCallString, tempPaths)
+        logString = spawn_matlab_job(matlabFunctionCallString, tempPaths)
         return (imageListFilename,logString)
     except Exception,e:
         return(imageListFilename,'Python excpetion generated in analyseSeries: ' + e.message)
 
 def update_progress(current, total):
     """
-    Curtis wrote this cool little function to display a progress bar for long processes
+    Curtis wrote this cool little function to display a progress bar for 
+    long processes
     """
     updateInterval = 50
     if(current % updateInterval == 0) | (current+1 == total):
@@ -289,7 +320,8 @@ def update_progress(current, total):
         if current+1 == total:
             status = "Done...\r\n"
         block = int(round(barLength*progress))
-        text = "\rPercent: [{0}] {1:3.2f}% ({2} sequences) {3}".format( "#"*block + "-"*(barLength-block), progress*100, current+1, status)
+        text = "\rPercent: [{0}] {1:3.2f}% ({2} sequences) {3}".format(
+         "#"*block + "-"*(barLength-block), progress*100, current+1, status)
         sys.stdout.write(text)
         sys.stdout.flush()
 
