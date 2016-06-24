@@ -196,7 +196,7 @@ def getTimeDelta(timestamp_final, timestamp_initial):
     return (timestamp_final - timestamp_initial).seconds + (timestamp_final - timestamp_initial).microseconds/1E6
 
 
-def spawnMatlabJob_ben(matlabFunctionCallString,tempPaths):
+def spawnMatlabJob(matlabFunctionCallString,tempPaths):
     """
     From CPlibs.py
     Spawn a matlab job by correctly formatting command-line call.
