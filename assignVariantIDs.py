@@ -4,6 +4,9 @@
  Variant IDs are assigned based on matching sequence. 
  The user may specify which bases of which sequence are to be used for assigning variants.
 
+To do:
+allow script to input existing ID file to use for populating new series files.
+
  Inputs:
    CPseries files
 
@@ -41,6 +44,8 @@ def main():
 	                    help='which column in the CPseries file you want to use for assigning variants')
 
 	group = parser.add_argument_group('optional arguments for processing data')
+	group.add_argument('-pi','--previous_ID_file', default="",
+	                    help='An ID file previously created for variants expected in the new CPseries files')
 	group.add_argument('-st','--seq_start', default=0,
 	                    help='start position within sequence for matching')
 	group.add_argument('-ed','--seq_end', default=0,
@@ -87,6 +92,15 @@ def main():
 	# The entries in variant dict will be three-element lists, the first is the ID, the second is the filter
 	# associated with that variant (if any), and the third is the number of times that variant has been seen
 	variantDict = {}
+
+	# If a previous ID file was provided, it will pre-populate the variantDict.
+	# Note: it is up to the user to ensure that seq_column, seq_start and seq_end match those used to 
+	# create the previous ID file!
+	if args.previous_ID_file != "":
+		with open(args.previous_ID_file, 'r') as f:
+			for line in f:
+				seq, ID, filtr, n = line.split()
+				variantDict[seq] = [ID, filtr, int(n)]
 
 	seq_col = int(args.seq_column)
 	strt = int(args.seq_start)
