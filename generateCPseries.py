@@ -102,7 +102,6 @@ def main():
 	
 	CPseriesDict = {}
 	for tile, fileName in CPseqDict.items():
-		# Sarah originally used some os.path utilities to create these file names. Is there any reason to do it that way?
 		path, baseFile = os.path.split(fileName)
 		CPseriesDict[tile] = os.path.join(outputDirectory, baseFile.split('.')[0]+'.CPseries')
 	
