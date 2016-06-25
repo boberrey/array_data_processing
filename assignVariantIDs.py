@@ -4,9 +4,6 @@
  Variant IDs are assigned based on matching sequence. 
  The user may specify which bases of which sequence are to be used for assigning variants.
 
-To do:
-allow script to input existing ID file to use for populating new series files.
-
  Inputs:
    CPseries files
 
