@@ -114,7 +114,7 @@ def main():
 		
 		# set sequence selection parameters:
 		seq_col = int(args.seq_column) - 1	# Allow for intuitive column selection (i.e. start at 1)
-		if seq_col < len(series_df.columns) or seq_col > len(series_df.columns):
+		if seq_col < 0 or seq_col > len(series_df.columns):
 			print "Error: invalid seq column selected. Out of range. Must be within {} and {}".format(1, len(series_df.columns))
 			sys.exit()
 		
