@@ -45,15 +45,15 @@ def main():
 	group.add_argument('-pi','--previous_ID_file', default="",
 	                    help='An ID file previously created for variants expected in the new CPseries files')
 	group.add_argument('-st','--seq_start', default=0,
-	                    help='start position within sequence for matching')
+	                    help='start position within sequence for matching. Will use beginning of sequence if none specified.')
 	group.add_argument('-ed','--seq_end', default=0,
-	                    help='end position within sequence for matching (note: will use whole sequence if position "0" given')
+	                    help='end position within sequence for matching. Will use end of sequence if none specified.')
 	group.add_argument('-lb','--label', default="ID_ed",
-	                    help='label attached to output files')
+	                    help='label attached to output files. Default is "ID_ed"')
 	group.add_argument('-od','--output_directory', default="",
 	                    help='output directory for series files with labeled variants (default will use series_directory)')
 	group.add_argument('-if','--ID_file', default="ID_file.txt",
-	                    help='file name for the list of IDs and corresponding sequences')
+	                    help='file name for the list of IDs and corresponding sequences. Default is "ID_file.txt"')
 
 	if not len(sys.argv) > 1:
 	    parser.print_help()
