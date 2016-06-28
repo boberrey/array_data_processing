@@ -22,6 +22,7 @@ import string
 import subprocess
 import pandas as pd
 import numpy as np
+import re
 
 import time
 
@@ -99,9 +100,7 @@ def main():
 				seq, ID, filtr, n = line.split()
 				variantDict[seq] = [ID, filtr, int(n)]
 
-	seq_col = int(args.seq_column)
-	strt = int(args.seq_start)
-	end = int(args.seq_end)
+	
 	fileNum = 1
 
 	# Loop through each CPseries file to assign variants:
@@ -113,9 +112,31 @@ def main():
 		# Read in CPseries file as pandas df
 		series_df = pd.read_table(os.path.join(args.series_directory, seriesFile), header=None)
 		
-		# If no end range provided, use entire sequence length
+		# set sequence selection parameters:
+		seq_col = int(args.seq_column) - 1	# Allow for intuitive column selection (i.e. start at 1)
+		if seq_col < len(series_df.columns) or seq_col > len(series_df.columns):
+			print "Error: invalid seq column selected. Out of range. Must be within {} and {}".format(1, len(series_df.columns))
+			sys.exit()
+		
+		# Test to ensure provided column contains sequence data:
+		test_seq = series_df.iloc[0,seq_col]
+		if not re.match("^[a-zA-Z]+$", test_seq):
+			print "Error: provided column does not contain sequence data, e.g. {}".format(test_seq)
+			sys.exit()
+
+		# Test to ensure start and end sequence positions are valid:
 		seq_length = len(series_df.iloc[0,seq_col])
-		if end <= strt:
+		strt = int(args.seq_start)
+		if strt < 0 or strt > seq_length - 1:
+			print "Error: invalid start position selected. Must be positive and less than seq length"
+			sys.exit()
+		end = int(args.seq_end)
+		if end < strt or end > seq_length:
+			print "Error: invalid end position selected. Must be greater than start position and <= seq length"
+			sys.exit()
+			
+		# If no end range provided, use entire sequence length
+		if end == 0:
 			end = seq_length
 
 		# Fill in list of IDs to be used as new column
