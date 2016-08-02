@@ -2,6 +2,8 @@
 """ Split a folder of images into multiple directories 
 for use in classic quantification pipeline
 
+Currently will assume that you have as the same number
+of images 
 
  Inputs:
    Directory with image files(.CPseq files)
@@ -38,6 +40,24 @@ def main():
 	if not len(sys.argv) > 1:
 	    parser.print_help()
 	    sys.exit()
+
+	#parse command line arguments
+	args = parser.parse_args()
+
+	# Gather the image files in the provided image directory
+	print "Finding image files in directory {}...".format(args.image_directory)
+
+	imageFiles = cpfiletools.find_files_in_directory(args.image_directory, ['tif', 'tiff'])
+	if len(imageFiles) < 1:
+		print "Error: no image files found in directory: " + args.image_directory
+		sys.exit()
+
+
+	# Make a dictionary of all the image files keyed by tile number
+	imageDict = cpfiletools.make_tile_dict_multiple(imageFiles, args.image_directory)
+
+
+
 
 
 
