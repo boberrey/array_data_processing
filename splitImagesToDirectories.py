@@ -7,12 +7,14 @@ of images
 
  Inputs:
    Directory with image files(.CPseq files)
-   CPfluor files (.CPfluor files or directories)
 
  Outputs:
-   CPseries files 
+   Image files moved into new directories such that
+   each new directory has only one image per tile
 
- Ben Ober-Reynolds, boberrey@stanford.edu """
+ Ben Ober-Reynolds, boberrey@stanford.edu 
+ Started 20160802, last changed 20160802
+ """
 
 import sys
 import os
@@ -43,6 +45,9 @@ def main():
 
 	#parse command line arguments
 	args = parser.parse_args()
+	if args.action != "m" and args.action != "l":
+		print "Error: action must be either 'm' (move) or 'l' (link)!"
+		sys.exit()
 
 	# Gather the image files in the provided image directory
 	print "Finding image files in directory {}...".format(args.image_directory)
@@ -55,9 +60,52 @@ def main():
 
 	# Make a dictionary of all the image files keyed by tile number
 	imageDict = cpfiletools.make_tile_dict_multiple(imageFiles, args.image_directory)
+	tileList = imageDict.keys()
+
+	numImagesPerTile = len(imageDict[tileList[0]])
+
+	# now make new directories to hold split images:
+	if args.output_directory == 'image_directory':
+		outputPath = args.image_directory
+	else:
+		outputPath = args.output_directory
+		if not os.path.exists(outputPath):
+			print "Error: directory {} does not exist!".format(outputPath)
+
+	newDirList = []
+	for n in range(numImagesPerTile):
+		dirname = outputPath+args.prefix+"{:02}".format(n+1)
+		os.mkdir(dirname)
+		newDirList.append(dirname)
+		print "made directory: {}".format(dirname)
+
+	print "new directory list: "
+	print newDirList
+	# Now that directories are made, move images into those directories (or link)
+	count = 0
+	while count < numImagesPerTile:
+		for tile in tileList:
+			fullFileName = imageDict[tile].pop(0)
+			prevPath, fileName = os.path.split(fullFileName)
+			if args.action == "m":
+				os.rename(fullFileName, newDirList[count]+"/"+fileName)
+			if args.action == "l":
+				os.symlink(fullFileName, newDirList[count]+"/"+fileName)
+		count += 1
+
+	print "Files split successfully"
 
 
 
+
+
+
+def printDict(d):
+	for key in d.keys():
+		images = d[key]
+		print "tile {}".format(key)
+		for image in images:
+			print "\t" + image 
 
 
 
@@ -66,3 +114,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

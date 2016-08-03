@@ -6,7 +6,10 @@ Some functions taken from Sarah's IMlibs.py
 Others taken from Curtis' CPlibs and/or CPscripts
 Some made by me
 
-Ben Ober-Reynolds
+Ben Ober-Reynolds, boberrey@stanford.edu
+
+
+Last edited 20160802
 """
 
 import os
