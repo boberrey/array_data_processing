@@ -52,6 +52,7 @@ def main():
 	# Gather the image files in the provided image directory
 	print "Finding image files in directory {}...".format(args.image_directory)
 
+
 	imageFiles = cpfiletools.find_files_in_directory(args.image_directory, ['tif', 'tiff'])
 	if len(imageFiles) < 1:
 		print "Error: no image files found in directory: " + args.image_directory
@@ -59,7 +60,9 @@ def main():
 
 
 	# Make a dictionary of all the image files keyed by tile number
-	imageDict = cpfiletools.make_tile_dict_multiple(imageFiles, args.image_directory)
+	imageDirectory = os.path.abspath(args.image_directory)
+
+	imageDict = cpfiletools.make_tile_dict_multiple(imageFiles, imageDirectory)
 	tileList = imageDict.keys()
 
 	numImagesPerTile = len(imageDict[tileList[0]])
@@ -79,8 +82,7 @@ def main():
 		newDirList.append(dirname)
 		print "made directory: {}".format(dirname)
 
-	print "new directory list: "
-	print newDirList
+
 	# Now that directories are made, move images into those directories (or link)
 	count = 0
 	while count < numImagesPerTile:
