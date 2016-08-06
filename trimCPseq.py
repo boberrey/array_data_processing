@@ -55,7 +55,7 @@ def main():
 
 	print "Trimming every "+str(n)+"th line from file "+seqFileName+"..."
 
-	newFileName = "trimed_"+str(n)+"_"+seqFileName
+	newFileName = "trimmed_"+str(n)+"_"+seqFileName
 	with open(newFileName, 'w') as f:
 		count = 1
 		for line in seqData:
@@ -68,6 +68,7 @@ def main():
 			else:
 				f.write(line)
 				count += 1
+	print "...done"
 
 
 
