@@ -102,13 +102,13 @@ def make_tile_dict_multiple(fileList, directory):
             print "Error: no tile number in file: "+ f
             sys.exit()
         else:
-            # May need to fix this somewhere down the line to sort by time
-            # A quick test seems to show that python is auto-sorting by
-            # timestamp, which is nice but perhaps not the most rigourous thing
             if tile in fileDict:
                 fileDict[tile].append(os.path.join(directory, f))
             else:
                 fileDict[tile] = [os.path.join(directory, f)]
+    for tile, lst in enumerate(fileDict):
+        # automatically sort binding series by timestamp:
+        lst.sort(key = lambda x: x.split('_')[-1])
     return fileDict
 
 
