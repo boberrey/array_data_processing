@@ -106,9 +106,9 @@ def make_tile_dict_multiple(fileList, directory):
                 fileDict[tile].append(os.path.join(directory, f))
             else:
                 fileDict[tile] = [os.path.join(directory, f)]
-    for tile, lst in enumerate(fileDict):
+    for key in fileDict.keys():
         # automatically sort binding series by timestamp:
-        lst.sort(key = lambda x: x.split('_')[-1])
+        fileDict[key].sort(key = lambda x: x.split('_')[-1])
     return fileDict
 
 
