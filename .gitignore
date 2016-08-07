@@ -1,0 +1,5 @@
+# List of patterns for git to ignore (i.e. do not track)
+
+# Do not track pyc files:
+*.pyc
+
