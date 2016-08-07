@@ -136,7 +136,8 @@ def generate_CPseries_files(cpSeqFilename, allRNA, bindingSeries,
     bindingSeriesSignal = np.zeros((numLines, len(bindingSeries)))
 
     for i, fluor in enumerate(bindingSeries):
-        if os.path.isfile(fluor):
+        # Having the 'phony' check in here is not a great solution, but it'll work quickly at least.
+        if os.path.isfile(fluor) and "phony" not in fluor:
             bindingSeriesSignal[:,i] = get_signal_from_CPFluor(fluor)
         else:
             bindingSeriesSignal[:,i] = np.ones(numLines)*np.nan
