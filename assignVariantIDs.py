@@ -70,7 +70,7 @@ def main():
 	# This script will run through each of the provided CPseries files sequentially in order to 
 	# ensure that each variant gets assigned only one variant ID.
 
-	CPseriesFiles = cpfiletools.find_files_in_directory(args.series_directory, ['CPseries'])
+	CPseriesFiles = cpfiletools.find_files_in_directory(args.series_directory, ['.CPseries'])
 
 	numLines = 0
 	for seriesFile in CPseriesFiles:
