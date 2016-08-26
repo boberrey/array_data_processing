@@ -86,13 +86,13 @@ if __name__ == '__main__':
     if annotatedClusterFile is not None:
         print 'Taking median fluorescence value per variant...'
         annotatedCluster = fileio.loadFile(annotatedClusterFile)
-        grouped = pd.concat([annotatedCluster, bindingSeries], axis=1).groupby('variant_number')
+        grouped = pd.concat([annotatedCluster, bindingSeries], axis=1).groupby('variant_ID')
         bindingSeries = grouped.median()   
         tileSeries = pd.Series(time_series, index=bindingSeries.index, name='tile')
         countSeries = grouped.count().max(axis=1)
-        fileAppend = '.median'
+        fileAppend = 'median'
     else:
-        fileAppend = '.median'
+        fileAppend = 'median'
         countSeries = pd.Series(1, index=bindingSeries.index)
     
     tileSeries.to_pickle('%s.%s.CPtiles.pkl'%(outFile, fileAppend))
