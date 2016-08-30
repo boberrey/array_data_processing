@@ -3,17 +3,17 @@
 for use in classic quantification pipeline
 
 Currently will assume that you have as the same number
-of images 
+of images for each tile. 
 
  Inputs:
-   Directory with image files(.CPseq files)
+   Directory with image files(.tif/.tiff files)
 
  Outputs:
    Image files moved into new directories such that
    each new directory has only one image per tile
 
  Ben Ober-Reynolds, boberrey@stanford.edu 
- Started 20160802, last changed 20160802
+ Started 20160802, last changed 20160830
  """
 
 import sys
