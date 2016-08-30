@@ -331,4 +331,6 @@ def update_progress(current, total):
         sys.stdout.flush()
 
 
-
+def printList(lst):
+    for l in lst:
+        print "\t{}".format(l)
