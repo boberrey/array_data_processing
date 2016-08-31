@@ -176,7 +176,8 @@ def dumb_consensus(seq_list, threshold=0.7):
 		G = float(bases.count('G'))
 		C = float(bases.count('C'))
 		T = float(bases.count('T'))
-		total = A + G + C + T
+		N = float(bases.count('N'))
+		total = A + G + C + T + N
 		if A / total > threshold:
 			consensus = consensus + "A"
 		elif G / total > threshold:
