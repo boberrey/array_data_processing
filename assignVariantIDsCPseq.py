@@ -80,7 +80,7 @@ def main():
 	filters = set(args.filters_to_use.split(','))
 	if "blank" in filters:
 		filters.remove("blank")
-		filters.add("nan")	#The pandas dataframe created later in the script populates "" entries with nan's
+		filters.add("no_filter")	#I coerce the pandas dataframes to contain 'no_filter' instead of NaN's
 
 	# This script will run through each of the provided CPseq files sequentially in order to 
 	# ensure that each variant gets assigned only one variant ID.
@@ -126,6 +126,13 @@ def main():
 		start = time.time()
 		# Read in CPseq file as pandas df
 		seq_df = pd.read_table(os.path.join(args.seq_directory, seqFile), header=None)
+		seq_df = seq_df.fillna('no_filter')
+
+		print "length pre-filter " + str(len(seq_df))
+		# filter df by filters to keep (if any)
+		if len(filters) > 0:
+			seq_df = seq_df[seq_df.iloc[:,1].isin(filters)]
+		print "length post-filter " + str(len(seq_df))
 		
 		# set sequence selection parameters:
 		seq_col = int(args.seq_column) - 1	# Allow for intuitive column selection (i.e. start at 1)
