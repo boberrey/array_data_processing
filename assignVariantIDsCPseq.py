@@ -47,6 +47,8 @@ def main():
 	group = parser.add_argument_group('optional arguments for processing data')
 	group.add_argument('-pi','--previous_ID_file', default="",
 	                    help='An ID file previously created for variants expected in the new CPseq files')
+	group.add_argument('-fk','--filters_to_use', default="",
+	                    help='Which filters should be kept. Separate by commas: filter1,filter2,filter3,etc. If you want to use clusters without a filter, include "blank" (filter1,filter2,blank). Default is to use all filters.')
 	group.add_argument('-st','--seq_start', default=0,
 	                    help='start position within sequence for matching. Will use beginning of sequence if none specified.')
 	group.add_argument('-ed','--seq_end', default=0,
@@ -73,6 +75,12 @@ def main():
 	if not os.path.isdir(output_directory):
 		print "Error: invalid output directory selection. Exiting..."
 		sys.exit()
+
+	# Crate a set of filters to be kept:
+	filters = set(args.filters_to_use.split(','))
+	if "blank" in filters:
+		filters.remove("blank")
+		filters.add("nan")	#The pandas dataframe created later in the script populates "" entries with nan's
 
 	# This script will run through each of the provided CPseq files sequentially in order to 
 	# ensure that each variant gets assigned only one variant ID.
