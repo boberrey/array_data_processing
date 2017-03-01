@@ -103,7 +103,7 @@ def main():
 	if len(lonelyImageFiles) < 1:
 		print "No need for phony files. Exiting..."
 		sys.exit()
-		
+
 	# Make a CPseq dict keyed by tile number:
 	seq_dict = cpfiletools.make_tile_dict(seqFilenames, args.seq_dir)
 
@@ -114,7 +114,7 @@ def main():
 		# find the CPseq file relevant to this image:
 		tile = cpfiletools.get_tile_number_from_filename(filename)
 		cpseq = seq_dict[tile]
-		with open(output_dir+newFluorName, 'w') as outfile, open(cpseq, 'r') as infile:
+		with open(output_dir+'/'+newFluorName, 'w') as outfile, open(cpseq, 'r') as infile:
 			for line in infile:
 				cluster_ID = line.split()[0]
 				outfile.write(cluster_ID+':0:0.000000:0.000000:0.000000:0.000000\n')
