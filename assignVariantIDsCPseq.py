@@ -81,7 +81,9 @@ def main():
 	if "blank" in filters:
 		filters.remove("blank")
 		filters.add("no_filter")	#I coerce the pandas dataframes to contain 'no_filter' instead of NaN's
-
+	if filters.pop() == "":
+		filters.add("all")
+	print filters
 	# This script will run through each of the provided CPseq files sequentially in order to 
 	# ensure that each variant gets assigned only one variant ID.
 
@@ -130,7 +132,7 @@ def main():
 
 		print "length pre-filter " + str(len(seq_df))
 		# filter df by filters to keep (if any)
-		if len(filters) > 0:
+		if "all" not in filters:
 			seq_df = seq_df[seq_df.iloc[:,1].isin(filters)]
 		print "length post-filter " + str(len(seq_df))
 		

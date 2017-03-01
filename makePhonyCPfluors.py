@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 """ Make empty CPfluor files corresponding to images that
-were not successfully quantified. These will be used in the 
-generateCPseries.py script in order to ensure empty values 
-are placed in the proper positions in a image series.
+were not successfully quantified. These will be used in processData.py 
+to ensure unquantified data points are placed in the proper positions in a image series.
 
 This script depends on both the images and the fluor 
 files having their original timestamps!
@@ -38,10 +37,12 @@ def main():
 	                    help='directory that holds the all the images on which quantification was attempted (successful or not)')
 	group.add_argument('-fd', '--fluor_dir', required=True,
 	                    help='directory containing CPfluor files that were generated')
+	group.add_argument('-sd', '--seq_dir', required=True,
+						help='directory that contains the CPseq files for this experiment.')
 
 	group = parser.add_argument_group('optional arguments for processing data')
 	group.add_argument('-od','--output_dir', default="fluor_dir",
-	                    help='where the output files will be saved.')
+	                    help='where the output files will be saved. Default is the fluor_dir.')
 	group.add_argument('-fl','--flag', default="phony",
 	                    help='optional flag to be inserted at the front of phony CPfluor file names.')
 
@@ -78,6 +79,13 @@ def main():
 		print "Error: No image files found in directory: " + args.image_dir
 		sys.exit()
 
+	# find the relevant CPseq files:
+	print "Finding CPseq files in directory "+args.seq_dir+" ..."
+	seqFilenames = cpfiletools.find_files_in_directory(args.seq_dir, ['.CPseq'])
+	if len(seqFilenames) < 1:
+		print "Error: No CPseq files found in directory: " + args.seq_dir
+		sys.exit()
+
 	# Make a set of timestamps from the fluor files
 	# This script assumes that no two images will have the same timestamp
 
@@ -92,12 +100,24 @@ def main():
 		if timestamp not in fluorTimestamps:
 			lonelyImageFiles.append(filename)
 
+	if len(lonelyImageFiles) < 1:
+		print "No need for phony files. Exiting..."
+		sys.exit()
+		
+	# Make a CPseq dict keyed by tile number:
+	seq_dict = cpfiletools.make_tile_dict(seqFilenames, args.seq_dir)
+
 	# Now make the new phony files
 	for filename in lonelyImageFiles:
 		root, ext = os.path.splitext(filename)
 		newFluorName = args.flag + filename.strip(ext) + ".CPfluor"
-		with open(output_dir+newFluorName, 'w') as f:
-			f.write("This is a phony file!")
+		# find the CPseq file relevant to this image:
+		tile = cpfiletools.get_tile_number_from_filename(filename)
+		cpseq = seq_dict[tile]
+		with open(output_dir+newFluorName, 'w') as outfile, open(cpseq, 'r') as infile:
+			for line in infile:
+				cluster_ID = line.split()[0]
+				outfile.write(cluster_ID+':0:0.000000:0.000000:0.000000:0.000000\n')
 		print "Generated phony file: "+newFluorName
 
 		

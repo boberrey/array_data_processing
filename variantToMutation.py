@@ -44,15 +44,11 @@ def main():
 	                    help='The sequence you want to relate mutants to')
 
 	group = parser.add_argument_group('optional arguments for processing data')
-	group.add_argument('-fk','--filters_to_use', default="",
-	                    help='Which filters should be kept. Separate by commas: filter1,filter2,filter3,etc. If you want to use clusters without a filter, include "blank" (filter1,filter2,blank). Default is to use all filters.')
 	# May not need to specify a start and end position since we're doing this with alignments
-	"""
-	group.add_argument('-st','--seq_start', default=0,
+	group.add_argument('-st','--seq_start', default=0, type=int,
 	                    help='start position within sequence for matching. Will use beginning of sequence if none specified.')
-	group.add_argument('-ed','--seq_end', default=0,
-	                    help='end position within sequence for matching. Will use end of sequence if none specified.')
-	"""
+	group.add_argument('-ed','--seq_end', default=0, type=int,
+	                    help='end position within sequence for matching (inclusive). Will use end of sequence if none specified.')
 	group.add_argument('-od','--output_directory', default="",
 	                    help='output directory for series files with labeled variants (default will use current directory)')
 	group.add_argument('-of','--output_file', default="",
@@ -79,6 +75,10 @@ def main():
 	translate_df = pd.read_pickle(args.CP_translate_file)
 	# trim to include just the variant_ID and the sequence:
 	translate_df = translate_df.iloc[:,[0,2]]
+	# Trim sequences if given range:
+	if args.seq_end != 0:
+		print "Trimming sequences to index range {} to {}...".format(args.seq_start, args.seq_end)
+		translate_df.iloc[:,1] = translate_df.iloc[:,1].apply(lambda x: x[args.seq_start:args.seq_end + 1])
 	consensus_sequence = args.consensus_sequence
 	output_dir = args.output_directory
 	if output_dir == "":
@@ -118,6 +118,7 @@ def main():
 
 	# Converting from a list of tuples into a dataframe is fast and easy:
 	annotation_df = pd.DataFrame(annotations, columns=['variant_ID', 'mutations', 'num_mutations'])
+	annotation_df.set_index('variant_ID', inplace=True)
 
 	print "Annotated {} mutations in {} seconds.".format(len(annotation_df.index), time.time() - start)
 	print "Saving data..."
@@ -151,10 +152,20 @@ def annotateMutation(consensus_sequence, mutant_sequence, gap_penalty, extension
 
 	"""
 	alignment = pairwise2.align.localms(consensus_sequence, mutant_sequence, 1, 0, gap_penalty, extension_penalty, one_alignment_only=True)
+	# This segment was running into issues when it incountered sequences that were so wrong it couldn't align at all.
+	# My attempt at catching those errors:
+	try:
+		aligned_consensus, aligned_mutant = alignment[0][0:2]
+	except IndexError:
+		return ("NO_ALIGNMENT", float('nan'))
+	else:
+		trimmed_consensus, trimmed_mutant = trimEndGaps(aligned_consensus, aligned_mutant)
+		return findMutations(trimmed_consensus, trimmed_mutant, counting_direction)
+	"""
 	aligned_consensus, aligned_mutant = alignment[0][0:2]
 	trimmed_consensus, trimmed_mutant = trimEndGaps(aligned_consensus, aligned_mutant)
 	return findMutations(trimmed_consensus, trimmed_mutant, counting_direction)
-
+	"""
 
 
 
@@ -183,6 +194,8 @@ def trimEndGaps(aligned_consensus, aligned_mutant):
 def findMutations(trimmed_consensus, trimmed_mutant, counting_direction):
 	"""
 	Right now it only identifies point mutants. Obviously that isn't ideal. Fix this soon.
+	Also, for short alignments, need a way to prevent it from reporting spurious alignments. 
+	What's a fair way to do this? Discard annotations where >1/2 of the consensus is mutant?
 	Inputs: 
 		trimmed_consensus: the trimmed consensus sequence
 		trimmed_mutant: the trimmed mutant sequence
@@ -201,8 +214,11 @@ def findMutations(trimmed_consensus, trimmed_mutant, counting_direction):
 			count += 1
 			# Currently will count first base as 'base 1'
 			mutations = mutations + str(i+1) + mutant + ":"
-	# Trim off the last ':'
-	return mutations[:-1], count
+	if count > len(trimmed_consensus)/2:
+		return "UPPER_LIM", float('nan')
+	else:
+		# Trim off the last ':'
+		return mutations[:-1], count
 
 
 def invertString(string):
