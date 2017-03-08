@@ -2,18 +2,17 @@
 
 """
 Isolate clusters that appear to have strong binding at early time points.
-This is the first selection criteria, based only on signal percentiles.
-Selection is also based on distance from fiducial marks.
+This is the first selection criteria, based only on signal value ranks.
+Clusters can be filtered out based on variant_ID, proximity to a specific
+variant, and quantification success.
 
-Warnings: The distance matrix computation is catastrophically memory intensive
-for a whole chip of data. Limit core use to prevent overloading the server.
 
 Inputs:
    CPsignal file
    CPannot file
 
 Outputs:
-   filtered fastq files
+   CPannot file of suspected strong binders
 
 Ben Ober-Reynolds
 """
@@ -39,34 +38,34 @@ def main():
                         help='The CPseries file containing cluster signal info.')
     group.add_argument('-ca', '--cpannot_file', required=True,
                         help='The CPannot file.')
-    group.add_argument('-fv', '--fiducial_variant_ID', required=True,
-                        help='The variant ID associated with fiducial marks')
+    group.add_argument('-n','--n_cutoff', type=int, required=True,
+                        help='cutoff for selection size.')
+    
     group = parser.add_argument_group('optional arguments')
+    group.add_argument('-ev', '--excluded_variants', default="",
+                        help='A file containing variant IDs to be exluded from selection')
     group.add_argument('-pd','--previous_distance_file', default="",
-                        help='A previously calculated min-distance file (will save a lot of time)')
-    group.add_argument('-sd','--save_distance_file', default="yes",
-                        help='If not providing a previously calculated distance file, do you want to save the one that will be calculated? [y/n], defualt y')
-    group.add_argument('-pc','--percentile_cutoff', type=float, default=97.5,
-                        help='The percentile cutoff for selection (default is 97.5)')
+                        help='A previously calculated min-distance file')
+    # gaussian sd ranges from 0.95 to 1.55 pixels. Conversion from pixels to 'sequencer units' is 3.7.
+    # In practice, optical abberations can complicate this cutoff. For example, you get more overlap of 
+    # fiducial marks and 'strong binders' at edges of images. This means you may want to use a much more cautious 
+    # cutoff than you initially thought.
+    group.add_argument('-md','--min_distance', type=int, default=50,
+                        help='The minimum distance in the provided distance (if provided) that will be considered. Default = 50')
     group.add_argument('-id','--image_indicees', default='1,2,3',
-                        help='Which image indicees to use. Default is the first 3 ("1,2,3").')
-    group.add_argument('-set','--set_operation', default='union',
-                        help='Whether to use the union of points passing percentile cutoff,\
-                         or the intersection. (union/intersect), default is union.')
+                        help='Which image indicees to use. Default is the first 3 excluding the baseline ("1,2,3"). Note that the first quantified image will be "0"')
     group.add_argument('-od','--output_directory', default="",
                         help='output directory for output file (default is current directory)')
-    group.add_argument('-op','--output_prefix', default="strong_binders",
-                        help='prefex for the identified strong binders')
-    group.add_argument('-n','--num_cores', type=int, default=1,
-                        help='number of cores to use (should be same as number of tiles)')
+    group.add_argument('-bf','--binder_filename', default="",
+                        help='output filename for suspected binders')
+    group.add_argument('-gnb','--get_non_binders', default="y",
+                        help='should a selection of non-binders be picked? Selection size will be the same as the binder selection.')
+    group.add_argument('-nbf','--non_binder_filename', default="",
+                        help='output filename for non_binder sample')
 
     # Some fixed parameters:
-    fiducial_warning_threshold = 1000
     variant_col_header = 'variant_ID'
     index_col_header = 'index'
-    tile_col_header = 'tile'
-    location_col_header = 'location'
-    distance_filename = 'tst_dist.pkl'
 
     # print help if no arguments provided
     if len(sys.argv) <= 1:
@@ -83,164 +82,131 @@ def main():
     if not os.path.isdir(output_dir):
         print "Error: invalid output directory selection. Exiting..."
         sys.exit()
-    # Set output prefix
-    output_prefix = args.output_prefix
 
-    # Fiducial mark variant_ID:
-    fid_var_ID = args.fiducial_variant_ID
+    # Set output filenames
+    binder_filename = args.binder_filename
+    if binder_filename == "":
+        binder_filename = os.path.basename(args.cpseries_file).split('.')[0] + "_early_binders.pkl"
+    binder_filename = output_dir.strip('/') + '/' + binder_filename
+    non_binder_filename = args.non_binder_filename
+    if non_binder_filename == "":
+        non_binder_filename = os.path.basename(args.cpseries_file).split('.')[0] + "_random_clusters.pkl"
+    non_binder_filename = output_dir.strip('/') + '/' + non_binder_filename
 
-    # Number of cores to use for distance matrix calculation
-    numCores = args.num_cores
+    # variants to be excluded from selection:
+    excluded_variants = []
+    if args.excluded_variants != "":
+        with open(args.excluded_variants, 'r') as f:
+            for line in f:
+                excluded_variants.append(line.strip())
+
+    # Images to be used for selection:
+    image_indicees = [int(x) for x in args.image_indicees.split(',')]
 
     # Check if distance file provided:
     # the distance df flag will be False otherwise
-    
     if args.previous_distance_file != "":
         min_dist_df = pd.read_pickle(args.previous_distance_file)
     else:
-        min_dist_df = False
-        print "No previous distance file provided. Distances will be calculated."
+        min_dist_df = pd.DataFrame()
+        print "No previous distance file provided."
 
     # Read in data:
     print "Reading in CPannot file {}...".format(args.cpannot_file)
     annot_df = pd.read_pickle(args.cpannot_file)
-    num_fiducials = len(annot_df[annot_df[variant_col_header] == fid_var_ID].index)
-    if num_fiducials < fiducial_warning_threshold:
-        print "Only found {} fiducial marks with {} {}!\
-         Is this the correct ID? Continue?".format(num_fiducials, variant_col_header, fid_var_ID)
-        answer = raw_input('[y/n]')
-        if answer.lower() != 'y':
-            sys.exit()
+    
     print "Reading in CPseries file {}...".format(args.cpseries_file)
     series_df = pd.read_pickle(args.cpseries_file)
     
-    print "Data loaded successfully. Formatting for fiducial proximity filtering..."
+    print "Data loaded successfully."
     # merge to incorporate variant_IDs, then free up memory
     merged_df = annot_df.merge(series_df, how='inner', left_index=True, right_index=True)
-    del annot_df
     del series_df
-    print "garbage collected..."
     gc.collect()
 
-    if not min_dist_df:
-        # This takes a very long time if you're using a whole chip of data.
-        min_dist_df = compute_min_distances(merged_df, fid_var_ID, variant_col_header, 
-            index_col_header, tile_col_header, location_col_header, numCores)
 
-    print(min_dist_df.head())
-    min_dist_df.to_pickle(distance_filename)
+    # Filter by minimum distance to previously flagged variants:
+    if not min_dist_df.empty:
+        merged_df = filter_by_min_distance(merged_df, min_dist_df, args.min_distance)
 
+    # Filter by excluded variants:
+    if excluded_variants:
+        merged_df = filter_by_excluded_variants(merged_df, excluded_variants, variant_col_header)
+
+    # Determine ranks for indicated images, then sort by average rank
+    merged_df = aggregate_and_sort_data(merged_df, image_indicees)
+
+    # Take the top n clusters as the suspected strong binders
+    strong_binder_indicees = list(merged_df.head(args.n_cutoff).index.values)
+    strong_binder_annot_df = annot_df.loc[strong_binder_indicees,:]
+
+    # save the strong binders
+    print "Saving suspected strong binder file: {}".format(binder_filename)
+    strong_binder_annot_df.to_pickle(binder_filename)
+
+    # Do we also want a random selection of binders?
+    if args.get_non_binders == 'y':
+        random_indicees = np.random.choice(list(merged_df.index.values), 
+            size=len(strong_binder_indicees), replace=False)
+        random_annot_df = annot_df.loc[random_indicees,:]
+        print "Saving random cluster file: {}".format(non_binder_filename)
+        random_annot_df.to_pickle(non_binder_filename)
+
+    print "Done."
+
+
+
+
+
+
+def filter_by_min_distance(merged_df, min_dist_df, min_distance):
+    """
+    Filter data by proximity to previously flagged clusters (probably fiducial marks).
+    """
+    pre_len = len(merged_df.index)
+    merged_df = merged_df.merge(min_dist_df, how='inner', left_index=True, right_index=True)
+    merged_df = merged_df[merged_df['min_dist'] > min_distance]
+    post_len = len(merged_df.index)
+    percent = round(100*float(pre_len - post_len)/pre_len , 3)
+    print "Distance cutoff of {} removed {} of {} clusters ({}%).".format(min_distance, 
+        pre_len - post_len, pre_len, percent)
+    del min_dist_df
+    gc.collect()
+    return merged_df
+
+
+def filter_by_excluded_variants(merged_df, excluded_variants, variant_col_header):
+    """
+    Filter data by variants that should be excluded
+    """
+    pre_len = len(merged_df.index)
+    merged_df = merged_df[~merged_df[variant_col_header].isin(excluded_variants)]
+    post_len = len(merged_df.index)
+    percent = round(100*float(pre_len - post_len)/pre_len , 3)
+    print "Excluded variant filtration removed {} of {} clusters ({}%).".format(pre_len - post_len, 
+        pre_len, percent)
+    return merged_df
+
+
+def aggregate_and_sort_data(merged_df, image_indicees):
+    """
+    Take the average of the signal ranks for the indicated image indicees
+    """
+    pre_len = len(merged_df.index)
+    merged_df = merged_df[image_indicees].dropna()
+    post_len = len(merged_df.index)
+    percent = round(100*float(pre_len - post_len)/pre_len , 3)
+    print "Unquantified value filtration removed {} of {} clusters ({}%).".format(pre_len - post_len, 
+        pre_len, percent)
+    merged_df = merged_df.rank(axis=0)
+    merged_df = pd.DataFrame(merged_df.mean(1).sort_values(ascending=False))
+    return merged_df
 
 
 
     
     
-def extractLocation(cluster_id):
-    # Extract the location (x, y) from a cluster ID
-    split_list = cluster_id.split(':')
-    x = int(split_list[5])
-    y = int(split_list[6])
-    return [x, y]
 
-def extractTile(cluster_id):
-    # Extract the tile number from a cluster ID
-    return int(cluster_id.split(':')[4][2:])
-
-
-def preallocate_dict(keys):
-    # Pre-allocate a dictionary with the keys required.
-    d = {}
-    for key in keys:
-        d[key] = []
-    return d
-
-
-def compute_min_distances(merged_df, fid_var_ID, variant_col_header, index_col_header, 
-    tile_col_header, location_col_header, numCores):
-    """
-    A very hairy function for calculating the real distance for each cluster to
-    its closest fiducial mark. Use of pandas slicing allows for significant speedup of 
-    some sections at the cost of programatic elegance...
-    """
-    # separate the fiducial and non-fiducial clusters:
-    no_fiducial_df = merged_df.loc[merged_df[variant_col_header] != fid_var_ID]
-
-    # Filter by proximity to fiducial marks:
-    fiducial_indicees = pd.Series(merged_df.loc[merged_df[variant_col_header] == fid_var_ID].index.values)
-    non_fiducial_indicees = pd.Series(no_fiducial_df.index.values)
-
-    # Get the locations and tiles for non-fiducial clusters and fiducial clusters
-    non_fiducial_locations = non_fiducial_indicees.apply(func=extractLocation)
-    non_fiducial_tiles = non_fiducial_indicees.apply(func=extractTile)
-
-    fiducial_locations = fiducial_indicees.apply(func=extractLocation)
-    fiducial_tiles = fiducial_indicees.apply(func=extractTile)
-
-
-    # Construct some data frames with the previously obtained tile and location information
-    # these intermediate structures will speed up dictionary creation in the next step.
-    non_fid_loc_df = pd.DataFrame({index_col_header: non_fiducial_indicees, tile_col_header: non_fiducial_tiles, 
-        location_col_header: non_fiducial_locations})
-    non_fid_loc_df = non_fid_loc_df[[index_col_header, tile_col_header, location_col_header]]
-    non_fid_loc_df = non_fid_loc_df.set_index(index_col_header)
-
-    fid_loc_df = pd.DataFrame({index_col_header: fiducial_indicees, tile_col_header: fiducial_tiles, 
-        location_col_header: fiducial_locations})
-    fid_loc_df = fid_loc_df[[index_col_header, tile_col_header, location_col_header]]
-    fid_loc_df = fid_loc_df.set_index(index_col_header)
-
-    # Construct dictionaries keyed by tile:
-    # Reformatting as dictionaries significantly reduces memory overhead during parallel
-    # distance matrix computation
-    all_tiles = sorted(list(set(fiducial_tiles)))
-    fid_loc_dict = preallocate_dict(all_tiles)
-    non_fid_index_dict = preallocate_dict(all_tiles)
-    non_fid_loc_dict = preallocate_dict(all_tiles)
-
-    # Fill in the dictionaries (the series maintain their original sorting)
-    for tile in all_tiles:
-        non_fid_index_dict[tile] = non_fid_loc_df[non_fid_loc_df[tile_col_header] == tile].index.values.tolist()
-        non_fid_loc_dict[tile] = non_fid_loc_df[non_fid_loc_df[tile_col_header] == tile][location_col_header].tolist()
-        fid_loc_dict[tile] = fid_loc_df[fid_loc_df[tile_col_header] == tile][location_col_header].tolist()
-
-    # Free up as much memory as possible...
-    del fiducial_indicees
-    del non_fiducial_indicees
-    del fiducial_locations
-    del non_fiducial_locations
-    del fiducial_tiles
-    del non_fiducial_tiles
-    del fid_loc_df
-    del non_fid_loc_df
-    print "garbage collected again..."
-    gc.collect()
-
-    # Use the dictionaries for parallel computation of distance matrices:
-    if numCores > 1:
-        print "Calculating distances in parallel with {} cores...".format(numCores)
-        frames = (Parallel(n_jobs=numCores, verbose = 10)(delayed(getFiducialMarkProximities)(\
-            non_fid_index_dict[tile], 
-            non_fid_loc_dict[tile],
-            fid_loc_dict[tile], tile) for tile in all_tiles))
-    else:
-        print "Calculating distances on a single core..."
-        frames = [getFiducialMarkProximities(
-            non_fid_index_dict[tile], 
-            non_fid_loc_dict[tile],
-            fid_loc_dict[tile], tile) for tile in all_tiles]
-
-    return pd.concat(frames)
-
-
-def getFiducialMarkProximities(non_fid_cluster_IDs, non_fid_loc_list, fid_loc_list, tile):
-    # Construct a data frame of distances to closest fiducial mark for 
-    # each cluster
-    print "calculating distances for tile {}".format(tile)
-    dm = spatial.distance_matrix(non_fid_loc_list, fid_loc_list)
-    min_distances = [min(x) for x in dm]
-    dist_df = pd.DataFrame({'cluster_ID': non_fid_cluster_IDs, 
-        'min_dist': min_distances}).set_index('cluster_ID')
-    return dist_df
 
 
 

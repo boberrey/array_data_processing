@@ -77,34 +77,32 @@ def main():
     if output_filename == "":
         output_filename = os.path.basename(args.cpannot_file).split('.')[0] + "_{}_distances.pkl".format(VOI_ID)
 
-    output_filename = output_dir + '/' + output_filename
-    print output_filename
+    output_filename = output_dir.strip('/') + '/' + output_filename
 
     # Number of cores to use for distance matrix calculation
     numCores = args.num_cores
-
 
     # Read in data:
     print "Reading in CPannot file {}...".format(args.cpannot_file)
     annot_df = pd.read_pickle(args.cpannot_file)
     num_variants = len(annot_df[annot_df[variant_col_header] == VOI_ID].index)
     if num_variants < VOI_warning_threshold:
-        print "Only found {} clusters with {} {}!\
-         Is this the correct ID? Continue?".format(num_fiducials, variant_col_header, VOI_ID)
+        print "Only found {} clusters with {} {}!".format(num_variants, variant_col_header, VOI_ID)
+        print "Is this the correct ID? Continue with distance calculation?"
         answer = raw_input('[y/n]')
         if answer.lower() != 'y':
             sys.exit()
     
     print "Data loaded successfully. Preparing for variant proximity filtering..."
-    # free up memory
-    del annot_df
-    gc.collect()
 
+    # Calculate distances:
     min_dist_df = compute_min_distances(annot_df, VOI_ID, variant_col_header, 
             index_col_header, tile_col_header, location_col_header, numCores)
         
-
-    min_dist_df.to_pickle(output_dir)
+    # Save output as pickle
+    print "Saving output..."
+    min_dist_df.to_pickle(output_filename)
+    print "Done."
 
     
     
@@ -185,7 +183,8 @@ def compute_min_distances(annot_df, VOI_ID, variant_col_header, index_col_header
     del non_VOI_tiles
     del VOI_loc_df
     del non_VOI_loc_df
-    print "garbage collected again..."
+    del annot_df
+    print "garbage collected..."
     gc.collect()
 
     # Use the dictionaries for parallel computation of distance matrices:
