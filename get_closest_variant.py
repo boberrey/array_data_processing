@@ -104,14 +104,16 @@ def main():
     min_dist_df.to_pickle(output_filename)
     print "Done."
 
-    
-    
-def extractLocation(cluster_id):
-    # Extract the location (x, y) from a cluster ID
+
+def extract_x(cluster_id):
+    # Extract x position
     split_list = cluster_id.split(':')
-    x = int(split_list[5])
-    y = int(split_list[6])
-    return [x, y]
+    return int(split_list[5])
+
+def extract_y(cluster_id):
+    # Extract y position
+    split_list = cluster_id.split(':')
+    return int(split_list[6])
 
 def extractTile(cluster_id):
     # Extract the tile number from a cluster ID
@@ -140,24 +142,27 @@ def compute_min_distances(annot_df, VOI_ID, variant_col_header, index_col_header
     VOI_indicees = pd.Series(annot_df.loc[annot_df[variant_col_header] == VOI_ID].index.values)
     non_VOI_indicees = pd.Series(no_VOI_df.index.values)
 
-    # Get the locations and tiles for non-fiducial clusters and fiducial clusters
-    non_VOI_locations = non_VOI_indicees.apply(func=extractLocation)
+    non_VOI_x = non_VOI_indicees.apply(func=extract_x)
+    non_VOI_y = non_VOI_indicees.apply(func=extract_y)
     non_VOI_tiles = non_VOI_indicees.apply(func=extractTile)
 
-    VOI_locations = VOI_indicees.apply(func=extractLocation)
+    VOI_x = VOI_indicees.apply(func=extract_x)
+    VOI_y = VOI_indicees.apply(func=extract_y)
     VOI_tiles = VOI_indicees.apply(func=extractTile)
+
 
 
     # Construct some data frames with the previously obtained tile and location information
     # these intermediate structures will speed up dictionary creation in the next step.
+
     non_VOI_loc_df = pd.DataFrame({index_col_header: non_VOI_indicees, tile_col_header: non_VOI_tiles, 
-        location_col_header: non_VOI_locations})
-    non_VOI_loc_df = non_VOI_loc_df[[index_col_header, tile_col_header, location_col_header]]
+        'x': non_VOI_x, 'y': non_VOI_y})
+    non_VOI_loc_df = non_VOI_loc_df[[index_col_header, tile_col_header, 'x', 'y']]
     non_VOI_loc_df = non_VOI_loc_df.set_index(index_col_header)
 
     VOI_loc_df = pd.DataFrame({index_col_header: VOI_indicees, tile_col_header: VOI_tiles, 
-        location_col_header: VOI_locations})
-    VOI_loc_df = VOI_loc_df[[index_col_header, tile_col_header, location_col_header]]
+        'x': VOI_x, 'y': VOI_y})
+    VOI_loc_df = VOI_loc_df[[index_col_header, tile_col_header, 'x', 'y']]
     VOI_loc_df = VOI_loc_df.set_index(index_col_header)
 
     # Construct dictionaries keyed by tile:
@@ -169,16 +174,19 @@ def compute_min_distances(annot_df, VOI_ID, variant_col_header, index_col_header
     non_VOI_loc_dict = preallocate_dict(all_tiles)
 
     # Fill in the dictionaries (the series maintain their original sorting)
+
     for tile in all_tiles:
-        non_VOI_index_dict[tile] = non_VOI_loc_df[non_VOI_loc_df[tile_col_header] == tile].index.values.tolist()
-        non_VOI_loc_dict[tile] = non_VOI_loc_df[non_VOI_loc_df[tile_col_header] == tile][location_col_header].tolist()
-        VOI_loc_dict[tile] = VOI_loc_df[VOI_loc_df[tile_col_header] == tile][location_col_header].tolist()
+        non_VOI_index_dict[tile] = non_VOI_loc_df[non_VOI_loc_df[tile_col_header] == tile].index.values
+        non_VOI_loc_dict[tile] = non_VOI_loc_df[non_VOI_loc_df[tile_col_header] == tile][['x', 'y']].values
+        VOI_loc_dict[tile] = VOI_loc_df[VOI_loc_df[tile_col_header] == tile][['x', 'y']].values
 
     # Free up as much memory as possible...
     del VOI_indicees
     del non_VOI_indicees
-    del VOI_locations
-    del non_VOI_locations
+    del VOI_x
+    del VOI_y
+    del non_VOI_x
+    del non_VOI_y
     del VOI_tiles
     del non_VOI_tiles
     del VOI_loc_df

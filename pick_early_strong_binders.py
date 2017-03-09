@@ -59,7 +59,7 @@ def main():
     group.add_argument('-bf','--binder_filename', default="",
                         help='output filename for suspected binders')
     group.add_argument('-gnb','--get_non_binders', default="y",
-                        help='should a selection of non-binders be picked? Selection size will be the same as the binder selection.')
+                        help='should a selection of non-binders be picked? [y/n] default "y". Selection size will be the same as the binder selection.')
     group.add_argument('-nbf','--non_binder_filename', default="",
                         help='output filename for non_binder sample')
 
