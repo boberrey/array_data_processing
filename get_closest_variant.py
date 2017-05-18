@@ -36,8 +36,8 @@ def main():
     group = parser.add_argument_group('required arguments:')
     group.add_argument('-ca', '--cpannot_file', required=True,
                         help='The CPannot file (cluster_IDs and associated variant_IDs).')
-    group.add_argument('-v', '--variant_ID_of_interest', required=True,
-                        help='The variant ID for which you want to find distances to (probably the fiducial mark ID)')
+    group.add_argument('-v', '--variant_IDs_of_interest', required=True,
+                        help='A file containing variant IDs for which you want to calculate min distance to (min distance to closest of any included variant_ID)')
     group = parser.add_argument_group('optional arguments')
     group.add_argument('-od','--output_directory', default="",
                         help='output directory for output file (default is current directory)')
@@ -62,7 +62,14 @@ def main():
     args = parser.parse_args()
 
     # Fiducial mark variant_ID:
-    VOI_ID = args.variant_ID_of_interest
+    VOI_IDs = args.variant_IDs_of_interest
+
+    # variants to calculate distance to:
+    VOI_IDs = []
+    with open(args.variant_IDs_of_interest, 'r') as f:
+        for line in f:
+            VOI_IDs.append(line.strip())
+        
 
     # If no output directory given, use current directory
     output_dir = args.output_directory
@@ -75,7 +82,7 @@ def main():
     # Set output filename
     output_filename = args.output_filename
     if output_filename == "":
-        output_filename = os.path.basename(args.cpannot_file).split('.')[0] + "_{}_distances.pkl".format(VOI_ID)
+        output_filename = os.path.basename(args.cpannot_file).split('.')[0] + "_VOI_distances.pkl"
 
     output_filename = output_dir.strip('/') + '/' + output_filename
 
@@ -85,10 +92,10 @@ def main():
     # Read in data:
     print "Reading in CPannot file {}...".format(args.cpannot_file)
     annot_df = pd.read_pickle(args.cpannot_file)
-    num_variants = len(annot_df[annot_df[variant_col_header] == VOI_ID].index)
+    num_variants = len(annot_df[annot_df[variant_col_header].isin(VOI_IDs)].index)
     if num_variants < VOI_warning_threshold:
-        print "Only found {} clusters with {} {}!".format(num_variants, variant_col_header, VOI_ID)
-        print "Is this the correct ID? Continue with distance calculation?"
+        print "Only found {} clusters with in variant ID list!".format(num_variants)
+        print "Is this correct? Continue with distance calculation?"
         answer = raw_input('[y/n]')
         if answer.lower() != 'y':
             sys.exit()
@@ -96,7 +103,7 @@ def main():
     print "Data loaded successfully. Preparing for variant proximity filtering..."
 
     # Calculate distances:
-    min_dist_df = compute_min_distances(annot_df, VOI_ID, variant_col_header, 
+    min_dist_df = compute_min_distances(annot_df, VOI_IDs, variant_col_header, 
             index_col_header, tile_col_header, location_col_header, numCores)
         
     # Save output as pickle
@@ -128,7 +135,7 @@ def preallocate_dict(keys):
     return d
 
 
-def compute_min_distances(annot_df, VOI_ID, variant_col_header, index_col_header, 
+def compute_min_distances(annot_df, VOI_IDs, variant_col_header, index_col_header, 
     tile_col_header, location_col_header, numCores):
     """
     A very hairy function for calculating the real distance for each cluster to
@@ -136,10 +143,10 @@ def compute_min_distances(annot_df, VOI_ID, variant_col_header, index_col_header
     some sections at the cost of programatic elegance...
     """
     # separate the VOI and non-VOI clusters:
-    no_VOI_df = annot_df.loc[annot_df[variant_col_header] != VOI_ID]
+    no_VOI_df = annot_df.loc[~annot_df[variant_col_header].isin(VOI_IDs)]
 
     # Filter by proximity to VOI clusters:
-    VOI_indicees = pd.Series(annot_df.loc[annot_df[variant_col_header] == VOI_ID].index.values)
+    VOI_indicees = pd.Series(annot_df.loc[annot_df[variant_col_header].isin(VOI_IDs)].index.values)
     non_VOI_indicees = pd.Series(no_VOI_df.index.values)
 
     non_VOI_x = non_VOI_indicees.apply(func=extract_x)
