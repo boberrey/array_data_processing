@@ -143,14 +143,14 @@ def main():
         with open(output_dir + '/' + args.output_prefix + '.txt', 'w') as f:
             f.write('x\ty\n')
             for offset in registration_results:
-                f.write("{}\t{}\n".format(offset_scale_x*offset[2], offset_scale_y*offset[1]))
+                f.write("{}\t{}\n".format(round(offset_scale_x*offset[2], 3), round(offset_scale_y*offset[1], 3)))
             # Add zeros at the end of this file, since the imaging stating expects 19 tiles
             f.write("0\t0")
     # print to stdout:
     print("Found offsets:")
     print("\tx\ty")
     for offset in registration_results:
-        print("\t{}\t{}".format(offset_scale_x*offset[2], offset_scale_y*offset[1]))
+        print("tile {}:\t{}\t{}".format(offset[0], round(offset_scale_x*offset[2], 3), round(offset_scale_y*offset[1], 3)))
 
 
 
@@ -247,7 +247,7 @@ def checkRegistrationOffset(tile, image_file, CPseq_file, data_scaling, filter_l
         if matches:
             center_pos_offsets = matches[1]
 
-    offset_y, offset_x = [round(float(x),3) for x in center_pos_offsets[1:-1].split(',')]
+    offset_y, offset_x = [float(x) for x in center_pos_offsets[1:-1].split(',')]
 
     return (int(tile), offset_y, offset_x)
 
