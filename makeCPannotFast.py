@@ -29,10 +29,27 @@ import time
 
 
 ### Global Vars ###
-read1_primer = "ATGTAGTAAGGAGGTTGTATGGAAGACGTTCCTGGATCC"	# Stall sequence
-read2_primer = "AGATCGGAAGAGCGGTTCAGCAGGAATGCCGAGACCG"	# TruSeqR2
+read1_primers = [
+"GGATCCAGGAACGTCTTCCATACAACCTCCTTACTACAT", # Stall sequence
+"AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT"  # TruSeqR1 sequence
+]
+
+# 20171103: We now have multiple R2 primers. I've modified this script to allow for
+# multiple R2 primers when running in R1 mode, but maybe the smart thing is just to run
+# in R2 mode from now on?
+#read2_primer = "AGATCGGAAGAGCGGTTCAGCAGGAATGCCGAGACCG"	# TruSeqR2
+#read2_primer = "GATCGTGAGCCGGACCCAGCGTTGAGAAGAGGCAAAG"  # TtEndoR2
+
+read2_primers = [
+"AGATCGGAAGAGCGGTTCAGCAGGAATGCCGAGACCG",  # TruSeqR2
+"GATCGTGAGCCGGACCCAGCGTTGAGAAGAGGCAAAG",  # TtEndoR2
+"CGGACGCGGGAAGACAGAATAGAAGTGTACGCCGTCG",  # let7-pShortR2
+"CACAGGGAGCGAGGTATACCGAGAGCTGACAGCGTAG"   # let7-pLongR2
+]
+
 primer_overlap = 15
-max_seq_length = 70
+#max_seq_length = 70
+max_seq_length = 50
 
 clusterID_column = 0
 r1_column = 2
@@ -149,7 +166,12 @@ def get_variant_dict(filename, read_num):
 				if len(seq) > max_seq_length:
 					seq = seq[:max_seq_length]
 
-			variant_dict[seq] = variant_ID
+			if seq not in variant_dict:
+				# Give priority to variant annotations that come first in list
+				variant_dict[seq] = variant_ID
+			else:
+				variant_dict[seq] = variant_dict[seq] + ';' + variant_ID
+	#print_dict(variant_dict)
 	return variant_dict
 
 
@@ -172,9 +194,11 @@ def annotate_clusters(CPseq_filename, variant_dict, read_num):
 
 			# Get the insert sequence from paired reads:
 			if read_num == 1:
-				insert_seq = get_insert_seq(read1, read2, read2_primer)
+				#insert_seq = get_insert_seq(read1, read2, read2_primer)
+				insert_seq = get_insert_seq(read1, read2, read2_primers)
 			else:
-				insert_seq = get_insert_seq(read2, read1, rev_comp(read1_primer))
+				#insert_seq = get_insert_seq(read2, read1, rev_comp(read1_primer))
+				insert_seq = get_insert_seq(read2, read1, read1_primers)
 
 			# if insert seq not in variant dict, continue to next line
 			if not insert_seq in variant_dict:
@@ -184,7 +208,7 @@ def annotate_clusters(CPseq_filename, variant_dict, read_num):
 			annotated_clusters.append([clusterID, variant_dict[insert_seq]])
 	return annotated_clusters
 
-
+'''
 def get_insert_seq(readA, readB, primer):
 	"""
 	Find the insert sequence of two paired reads. If no overlap is found, will
@@ -208,7 +232,36 @@ def get_insert_seq(readA, readB, primer):
 		return insert
 	else:
 		return readA[:max_seq_length]
+'''
 
+
+def get_insert_seq(readA, readB, primers):
+	"""
+	Find the insert sequence of two paired reads. If no overlap is found, will
+	return false
+	Inputs:
+		readA (str) - the read of focus
+		readB (str) - the other read
+	Outputs:
+		insert_seq (str) - the insert sequence or the whole read if no insert
+			found
+	"""
+	primer_seqs = [primer[:primer_overlap] for primer in primers]
+	insert_end = -1
+	for p in primer_seqs:
+		insert_end = readA.find(p)
+		if insert_end >= 0:
+			break
+	# If the primer sequence isn't found, just return the whole read 1
+	if insert_end < 0:
+		return readA[:max_seq_length]
+	insert = readA[:insert_end]
+	revB = rev_comp(readB)
+	# It seems like there is some difficulty in matching the full length thing...
+	if revB.find(insert[1:-1]) >= 0:
+		return insert
+	else:
+		return readA[:max_seq_length]
 
 
 def rev_comp(seq):
@@ -246,6 +299,10 @@ def longestSubstring(lst):
 			match = False
 	return substr
 
+
+def print_dict(d):
+	for key, val in d.items():
+		print "{}:\t{}".format(key, val)
 
 if __name__ == '__main__':
     main()
