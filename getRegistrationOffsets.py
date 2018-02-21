@@ -247,6 +247,9 @@ def checkRegistrationOffset(tile, image_file, CPseq_file, data_scaling, filter_l
         if matches:
             center_pos_offsets = matches[1]
 
+    if center_pos_offsets == "":
+        # If registration not found, just return zeros.
+        return (int(tile), 0, 0)
     offset_y, offset_x = [float(x) for x in center_pos_offsets[1:-1].split(',')]
 
     return (int(tile), offset_y, offset_x)
