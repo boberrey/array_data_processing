@@ -225,7 +225,7 @@ def plot_histogram(ax, x, bins=50, log=False, remove_outliers=False, kwargs={}):
 
 def reg_scatter(ax, x, y, 
     showR2=False, showRMSE=False, square=False,
-    eqLine=None, linFit=None, splineFit=None, cmap="viridis", kwargs={}):
+    eqLine=None, linFit=None, splineFit=None, label_loc=None, kwargs={}):
     """
     Create a linear scatter plot with points colored by gaussian density
     Inputs:
@@ -279,6 +279,9 @@ def reg_scatter(ax, x, y,
         xmax, ymax = [max([xmax, ymax])]*2
         ax.set_xlim(xmin, xmax)
         ax.set_ylim(ymin, ymax)
+        # make x ticks and y ticks equal
+        xticks = ax.get_xticks()
+        ax.set_yticks(xticks[1:-1])
         ax.set_aspect(1)
     
     if eqLine:
@@ -326,18 +329,24 @@ def reg_scatter(ax, x, y,
         r2 = 1 - RSS/TSS
         xy_rmse = np.sqrt(np.mean((y - cs(x))**2))
 
+    label_txt = None
     if showR2 and showRMSE:
-        label_txt = "$R^2 = {:0.3f} $\n$ RMSE = {:0.3f}$".format(r2, xy_rmse)
-        ax.text(0.05, 0.95, label_txt, transform=ax.transAxes, verticalalignment='top', fontsize=12, 
-                bbox={'facecolor': ax.get_facecolor(), 'alpha': 1.0, 'pad': 10, 'edgecolor':'none'})
+        label_txt = "$R^2 = {:0.3f} $\n$ RMSE = {:0.3f}$".format(r2, xy_rmse)   
     elif showR2:
         label_txt = "$R^2 = {:0.3f}$".format(r2)
-        ax.text(0.05, 0.95, label_txt, transform=ax.transAxes, verticalalignment='top', fontsize=12, 
-                bbox={'facecolor': ax.get_facecolor(), 'alpha': 1.0, 'pad': 10, 'edgecolor':'none'})
     elif showRMSE:
         label_txt = "$RMSE = {:0.3f}$".format(xy_rmse)
-        ax.text(0.05, 0.95, label_txt, transform=ax.transAxes, verticalalignment='top', fontsize=12, 
+
+    if label_txt:
+        if label_loc=="bottom_right":
+            ax.text(0.95, 0.05, label_txt, transform=ax.transAxes, 
+                verticalalignment='bottom', horizontalalignment='right', 
                 bbox={'facecolor': ax.get_facecolor(), 'alpha': 1.0, 'pad': 10, 'edgecolor':'none'})
+        else:
+            ax.text(0.05, 0.95, label_txt, transform=ax.transAxes, 
+                verticalalignment='top', horizontalalignment='left', 
+                bbox={'facecolor': ax.get_facecolor(), 'alpha': 1.0, 'pad': 10, 'edgecolor':'none'})
+
     
     return ax
 
@@ -457,7 +466,7 @@ def density_scatter(ax, x, y,
 
     if showR2 and showRMSE:
         label_txt = "$R^2 = {:0.3f} $\n$ RMSE = {:0.3f}$".format(r2, xy_rmse)
-        ax.text(0.05, 0.95, label_txt, transform=ax.transAxes, verticalalignment='top', fontsize=12, 
+        ax.text(0.7, 0.15, label_txt, transform=ax.transAxes, verticalalignment='top', fontsize=14, 
                 bbox={'facecolor': ax.get_facecolor(), 'alpha': 1.0, 'pad': 10, 'edgecolor':'none'})
     elif showR2:
         label_txt = "$R^2 = {:0.3f}$".format(r2)
@@ -580,7 +589,8 @@ def combine_double_mut_dfs(upper_df, lower_df):
     return combined_df
 
 
-def double_mutant_heatmap(ax, dm_df, mask_color="lightgrey", cmap="viridis", cbar_label="", splitCells=None, splitColor="white"):
+def double_mutant_heatmap(ax, dm_df, mask_color="lightgrey", cmap="viridis", cbar_label="", 
+    splitCells=None, splitColor="lightgrey", slim_ticks=True, kwargs={}):
     """
     Plot a double mutant heatmap.
     Inputs:
@@ -599,11 +609,40 @@ def double_mutant_heatmap(ax, dm_df, mask_color="lightgrey", cmap="viridis", cba
     # this is how you change the 'mask' color
     ax.set_facecolor(mask_color)
     
-    hm = sns.heatmap(plot_df, ax=ax, cmap=cmap)
+    hm = sns.heatmap(plot_df, ax=ax, cmap=cmap, square=True, cbar_kws={'label':cbar_label}, **kwargs)
     
     if splitCells:
-        ax.hlines([splitCells[0]*i for i in range(len(dm_df.index))], *ax.get_xlim(), color=splitColor)
-        ax.vlines([splitCells[1]*i for i in range(len(dm_df.columns))], *ax.get_ylim(), color=splitColor)
+        ax.hlines([splitCells[0]*i for i in range(len(dm_df.index))], *ax.get_xlim(), color=splitColor, linewidth=1)
+        ax.vlines([splitCells[1]*i for i in range(len(dm_df.columns))], *ax.get_ylim(), color=splitColor, linewidth=1)
+
+    if slim_ticks:
+        xlabels = [item.get_text().split(">")[-1] for item in ax.get_xticklabels()]
+        ylabels = [item.get_text().split(">")[-1] for item in ax.get_yticklabels()]
+        ax.set_xticklabels(xlabels)
+        ax.set_yticklabels(ylabels)
+        xtick_pos = ax.get_xticks()
+        ytick_pos = ax.get_yticks()
+        x_pos_step = xtick_pos[1] - xtick_pos[0]
+        y_pos_step = ytick_pos[1] - ytick_pos[0]
+        new_xpos = []
+        new_ypos = []
+        for i, pos in enumerate(xtick_pos):
+            if i % 3 == 0:
+                new_xpos.append(pos + x_pos_step*0.1)
+            elif i % 3 == 2:
+                new_xpos.append(pos - x_pos_step*0.1)
+            else:
+                new_xpos.append(pos)
+        for i, pos in enumerate(ytick_pos):
+            if i % 3 == 0:
+                new_ypos.append(pos + y_pos_step*0.1)
+            elif i % 3 == 2:
+                new_ypos.append(pos - y_pos_step*0.1)
+            else:
+                new_ypos.append(pos)
+        ax.set_xticks(new_xpos)
+        ax.set_yticks(new_ypos)
+        plt.xticks(rotation=0)
     
     return hm
 

@@ -82,6 +82,8 @@ def main():
 	group.add_argument('-od','--output_directory',
 		help='output directory for series files with labeled \
 		variants (default will use seq_directory)')
+	group.add_argument('-p','--paired', action='store_true',
+		help='flag to indicate if variants must be read in both directions (more conservative)')
 	group.add_argument('-n','--num_cores', type=int, default=19,
                         help='number of cores to use')
 
@@ -113,11 +115,11 @@ def main():
 		print "Annotating clusters in parallel on {} cores...".format(numCores)
 		annotated_cluster_lists = (Parallel(n_jobs=numCores, verbose=10)\
 			(delayed(annotate_clusters)(
-				args.seq_directory + CPseq, variant_dict, args.read_num) for CPseq in CPseqFiles))
+				args.seq_directory + CPseq, variant_dict, args.read_num, args.paired) for CPseq in CPseqFiles))
 	else:
 		print "Annotating clusters on a single core"
 		annotated_cluster_lists = [annotate_clusters(
-			args.seq_directory + CPseq, variant_dict, args.read_num) for CPseq in CPseqFiles]
+			args.seq_directory + CPseq, variant_dict, args.read_num, args.paired) for CPseq in CPseqFiles]
 
 	# Combine cluster lists:
 	print "Formatting and saving CPannot file..."
@@ -175,7 +177,7 @@ def get_variant_dict(filename, read_num):
 	return variant_dict
 
 
-def annotate_clusters(CPseq_filename, variant_dict, read_num):
+def annotate_clusters(CPseq_filename, variant_dict, read_num, paired):
 	"""
 	Annotate cluster IDs with their appropriate variants
 	Inputs:
@@ -195,10 +197,10 @@ def annotate_clusters(CPseq_filename, variant_dict, read_num):
 			# Get the insert sequence from paired reads:
 			if read_num == 1:
 				#insert_seq = get_insert_seq(read1, read2, read2_primer)
-				insert_seq = get_insert_seq(read1, read2, read2_primers)
+				insert_seq = get_insert_seq(read1, read2, read2_primers, paired)
 			else:
 				#insert_seq = get_insert_seq(read2, read1, rev_comp(read1_primer))
-				insert_seq = get_insert_seq(read2, read1, read1_primers)
+				insert_seq = get_insert_seq(read2, read1, read1_primers, paired)
 
 			# if insert seq not in variant dict, continue to next line
 			if not insert_seq in variant_dict:
@@ -235,7 +237,7 @@ def get_insert_seq(readA, readB, primer):
 '''
 
 
-def get_insert_seq(readA, readB, primers):
+def get_insert_seq(readA, readB, primers, paired):
 	"""
 	Find the insert sequence of two paired reads. If no overlap is found, will
 	return false
@@ -256,12 +258,15 @@ def get_insert_seq(readA, readB, primers):
 	if insert_end < 0:
 		return readA[:max_seq_length]
 	insert = readA[:insert_end]
-	revB = rev_comp(readB)
-	# It seems like there is some difficulty in matching the full length thing...
-	if revB.find(insert[1:-1]) >= 0:
-		return insert
-	else:
-		return readA[:max_seq_length]
+	if paired:
+		# If paired flag was indicated, check that the insert was read in both directions
+		revB = rev_comp(readB)
+		# It seems like there is some difficulty in matching the full length thing...
+		if revB.find(insert[1:-1]) >= 0:
+			return insert
+		else:
+			return readA[:max_seq_length]
+	return insert
 
 
 def rev_comp(seq):

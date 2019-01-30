@@ -12,7 +12,7 @@ from lmfit import Parameters, Model
 
 """
 Most functions here will use the lmfit library:
-	"Non-linear Least-squares Minimization and Curve-fitting for Python"
+    "Non-linear Least-squares Minimization and Curve-fitting for Python"
 
 I will be making use of two lmfit classes: 'Parameters' and 'Model'.
 The 'Parameters' class to lets you define the parameters of a model and 
@@ -30,13 +30,13 @@ How to add/define parameters for lmfit:
 add(name, value=None, vary=True, min=-inf, max=inf, expr=None, brute_step=None)
 
 Parameters:
-    name (str) – Name of parameter. Must match [a-z_][a-z0-9_]* and cannot be a Python reserved word.
-    value (float, optional) – Numerical Parameter value, typically the initial value.
-    vary (bool, optional) – Whether the Parameter is varied during a fit (default is True).
-    min (float, optional) – Lower bound for value (default is -numpy.inf, no lower bound).
-    max (float, optional) – Upper bound for value (default is numpy.inf, no upper bound).
-    expr (str, optional) – Mathematical expression used to constrain the value during the fit.
-    brute_step (float, optional) – Step size for grid points in the brute method.
+    name (str) -- Name of parameter. Cannot be a Python reserved word.
+    value (float, optional) -- Numerical Parameter value, typically the initial value.
+    vary (bool, optional) -- Whether the Parameter is varied during a fit (default is True).
+    min (float, optional) -- Lower bound for value (default is -numpy.inf, no lower bound).
+    max (float, optional) -- Upper bound for value (default is numpy.inf, no upper bound).
+    expr (str, optional) -- Mathematical expression used to constrain the value during the fit.
+    brute_step (float, optional) -- Step size for grid points in the brute method.
 """
 
 
@@ -121,8 +121,12 @@ def plot_single_exp_data_and_curve(ax, x, y, fit_model, showParams=True, showR2=
     half_life = np.log(2.0)/params_dict["kobs"]
     
     if showParams and showR2:
-        label_txt = "$k_c = {:0.3f}$ $h^{{-1}}$\n$t_{{1/2}} = {:0.3f}$ $h$\n$R^2 = {:0.3f}$".format(
-            params_dict["kobs"], half_life, rsq)
+        if params_dict["kobs"] < 0.001:
+            label_txt = "$k_c = {:0.3e}$ $h^{{-1}}$\n$t_{{1/2}} = {:0.3f}$ $h$\n$R^2 = {:0.3f}$".format(
+                params_dict["kobs"], half_life, rsq)
+        else:
+            label_txt = "$k_c = {:0.3f}$ $h^{{-1}}$\n$t_{{1/2}} = {:0.3f}$ $h$\n$R^2 = {:0.3f}$".format(
+                params_dict["kobs"], half_life, rsq)
         ax.text(0.95, 0.95, label_txt, transform=ax.transAxes, 
                 verticalalignment='top', horizontalalignment='right', fontsize=12, 
                 bbox={'facecolor': ax.get_facecolor(), 'alpha': 1.0, 'pad': 10, 'edgecolor':'none'})

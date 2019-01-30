@@ -45,7 +45,7 @@ def main():
     group = parser.add_argument_group('optional arguments')
     group.add_argument('-ma', '--max_val', type=int, default=4000,
         help='fluorescence intensity value that triggers cleaning')
-    group.add_argument('-mn', '--min_val', type=int, default=1700,
+    group.add_argument('-mn', '--min_val', type=int, default=1500,
         help='fluorescence value that triggers end of cleaning')
 
     # print help if no arguments provided
