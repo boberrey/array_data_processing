@@ -4,6 +4,7 @@ matplotlib and seaborn
 """
 
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import matplotlib.cm as mplcm
 import seaborn as sns
 import pandas as pd
@@ -14,6 +15,16 @@ import re
 from scipy.stats import gaussian_kde
 from Bio import pairwise2
 from collections import OrderedDict
+
+
+# Custom colormaps
+
+# Solar extra (aka the Jason classic)
+solar_extra_colors = ['#3361A5', '#248AF3', '#14B3FF', '#88CEEF', '#C1D5DC', '#EAD397', '#FDB31A','#E42A2A','#A31D1D']
+solar_extra = mpl.colors.LinearSegmentedColormap.from_list('CustomMap', solar_extra_colors)
+
+
+
 
 # Utility functions
 
@@ -648,8 +659,209 @@ def double_mutant_heatmap(ax, dm_df, mask_color="lightgrey", cmap="viridis", cba
 
 
 ############################
-### Single Variant Plots ###
+### Tandem mismatch Plots ##
 ############################
+
+def make_tandem_mutant_df(mut_df):
+    """
+    Given a dataframe already filtered to the mutant class you're interested in,
+    generate a tandem mutant df
+    """
+    orig_col_names = mut_df.columns.tolist()
+    tandem_mutants = []
+    for index, row in mut_df.iterrows():
+        mutation_positions = sorted([int(re.findall('\d+', x)[0]) for x in row.mut_annotation.split('_')[-1].split(',')])
+        mut_intervals = [mutation_positions[i+1] - mutation_positions[i] for i in range(len(mutation_positions)-1)]
+        if all([x == 1 for x in mut_intervals]):
+            tandem_mutants.append(row.tolist() + [mutation_positions[0]])
+    tandem_df = pd.DataFrame(tandem_mutants)
+    tandem_df.columns = orig_col_names + ['mut_pos']
+    return tandem_df.sort_values(by='mut_pos')
+
+
+def get_missing_vals(tandem_df, value):
+    """
+    Get the missing values for each position from a tandem mutant df
+    """
+    # Get tandem data
+    groups = tandem_df.groupby('mut_pos')
+    plot_data = [group[value].tolist() for name, group in groups]
+    missing_vals = []
+    for pos_list in plot_data:
+        missing_vals.append(sum([1 for x in pos_list if np.isnan(x)]))
+    
+    if 1 not in groups.groups.keys():
+        missing_vals = [[np.nan]] + missing_vals
+    return missing_vals
+
+
+def get_out_of_bounds_vals(tandem_df, value, oob, direction='high'):
+    """
+    Get the missing values for each position from a tandem mutant df
+    (direction = {high, low})
+    """
+    # Get tandem data
+    groups = tandem_df.groupby('mut_pos')
+    plot_data = [group[value].tolist() for name, group in groups]
+    oob_vals = []
+    for pos_list in plot_data:
+        if direction == 'high':
+            oob_vals.append(sum([1 for x in pos_list if x >= oob]))
+        elif direction == 'low':
+            oob_vals.append(sum([1 for x in pos_list if x <= oob]))
+        else:
+            print("'direction' must either be 'high' or 'low'!")
+            return None
+    
+    if 1 not in groups.groups.keys():
+        oob_vals = [[np.nan]] + oob_vals
+    return oob_vals
+
+
+def plot_tandem_mutant_boxplot(ax, tandem_df, value, wt_rate, num_bases, wt_line_color="black", kwargs={}):
+    """
+    Plot a tandem mutant boxplot
+    """
+    # Get tandem data
+    groups = tandem_df.groupby('mut_pos')
+    plot_data = [group[value].tolist() for name, group in groups]
+    cleaned_plot_data =[]
+    for pos_list in plot_data:
+        cleaned_plot_data.append([x for x in pos_list if not np.isnan(x)])
+    
+    if 1 not in groups.groups.keys():
+        cleaned_plot_data = [[np.nan]] + cleaned_plot_data
+    if 1 not in groups.groups.keys():
+        plot_data = [[np.nan]] + plot_data
+
+    
+    # Make plot
+    sns.set_style('ticks')
+    
+    bp = ax.boxplot(cleaned_plot_data, patch_artist=True, **kwargs)
+    """
+    for element in ['boxes', 'whiskers', 'fliers', 'means', 'medians', 'caps']:
+        plt.setp(bp[element], color='black')
+    for patch in bp['boxes']:
+        patch.set(facecolor='#B39E9C')
+    """
+    ax.axhline(y=wt_rate, ls='--', color=wt_line_color,alpha=0.6)
+        
+    ax.tick_params(labelsize=12)
+    xlabels = ax.get_xticklabels()
+
+    tick_labels = [",".join([str(int(x.get_text()) + i) for i in range(num_bases)]) for x in xlabels]
+
+    ax.set_xticklabels(tick_labels)
+    ax.tick_params(axis='x', rotation=90)
+    
+    #sns.despine()
+    
+    return ax
+
+
+
+
+
+##########################
+### Single Indel Plots ###
+##########################
+
+def parse_single_insertion(row, wt_seq, val_col):
+    flank, p1, p2etc = row.mut_annotation.split("_")
+    p2, base = p2etc.split("ins")
+    p1 = len(wt_seq) - float(p1) + 1
+    p2 = len(wt_seq) - float(p2) + 1
+    return pd.Series([(p1 + p2)/2, base, row[val_col]])
+
+def parse_single_deletion(row, wt_seq, val_col):
+    no_flank = row.mut_annotation.split("_")[-1]
+    pos = int(no_flank.split("del")[0])
+    base = wt_seq[pos-1]
+    pos = len(wt_seq) - pos + 1
+    return pd.Series([pos, base, row[val_col]])
+
+
+def plot_single_insertions_and_deletions(ax, full_df, val_col, wt_seq, lines=False, spanning_ins=True, log=True,
+                                         base_dict=OrderedDict([("A", "#E24E42"), ("G", "#E9B000"), 
+                                                               ("C", "#008F95"), ("T", "#30415D"), 
+                                                               ("Deletion", "white")]), 
+                                         ins_kwargs={}, del_kwargs={}, ins_line_kwargs={}, del_line_kwargs={}):
+    """
+    plot insertions and deletions together for a given parameter
+    """
+    single_deletions = full_df[full_df.mutant_group == "single_deletions"]
+    single_insertions = full_df[full_df.mutant_group == "single_insertions"]
+    
+    del_data = single_deletions.apply(lambda x: parse_single_deletion(x, wt_seq, val_col), axis=1)
+    del_data.columns = ["pos", "base", "val"]
+    ins_data = single_insertions.apply(lambda x: parse_single_insertion(x, wt_seq, val_col), axis=1)
+    ins_data.columns = ["pos", "base", "val"]
+    
+    # Log 
+    if log:
+        del_data["val"] = np.log(del_data["val"])
+        ins_data["val"] = np.log(ins_data["val"])
+    
+    # Sort positions
+    del_data.sort_values("pos", inplace=True)
+    ins_data.sort_values("pos", inplace=True)
+    
+    # fill in missing deletion data
+    positions = del_data["pos"].tolist()
+    for i, p in enumerate(positions[1:]):
+        if p - positions[i] > 1:
+            dup_data = del_data[del_data.pos == positions[i + 1]].copy()
+            dup_data["pos"] = positions[i] + 1
+            del_data = del_data.append(dup_data, ignore_index=True)
+    
+    if spanning_ins:
+        # fill in missing insertion data (spanning insertions)
+        spanners = []
+        ins_pos = list(set(ins_data["pos"]))
+        bases = set(ins_data["base"])
+        for i, pos in enumerate(ins_pos):
+            missing_base = bases - set(ins_data[ins_data["pos"] == pos]["base"])
+            if missing_base:
+                dup_data = ins_data[(ins_data["pos"] == pos + 1) & (ins_data["base"].isin(missing_base))].copy()
+                if dup_data.empty:
+                    continue
+                dup_data["pos"] = pos
+                ins_data = ins_data.append(dup_data, ignore_index=True)
+                b, v = dup_data.values[0][1:]
+                spanners.append([pos, pos+1, b, v])
+        
+        #for sp in spanners:
+        #    ax.plot([sp[0], sp[1]], [sp[3], sp[3]], c=base_dict[sp[2]])
+    
+    
+    # resort
+    del_data.sort_values("pos", inplace=True)
+    ins_data.sort_values("pos", inplace=True)
+    
+    # do the plotting
+    
+    del_pos = del_data["pos"].tolist()
+    del_y = del_data["val"].tolist()
+    del_bases = del_data["base"].tolist()
+    
+    ins_pos = ins_data["pos"].tolist()
+    ins_y = ins_data["val"].tolist()
+    ins_bases = ins_data["base"].tolist()
+    ins_colors = [base_dict[x] for x in ins_bases]
+    
+    if lines:
+        ax.plot(del_pos, del_y, alpha=0.5, **del_line_kwargs)
+        ins_mean = ins_data.groupby("pos").mean()
+        ax.plot(ins_mean.index, ins_mean, alpha=0.5, **ins_line_kwargs)
+
+    ax.scatter(del_pos, del_y, c=base_dict["Deletion"], edgecolors="black", 
+               facecolors=base_dict["Deletion"], zorder=10, **del_kwargs)
+    
+    ax.scatter(ins_pos, ins_y, c=ins_colors, zorder=11, **ins_kwargs)
+                
+    return ax
+
 
 
 
