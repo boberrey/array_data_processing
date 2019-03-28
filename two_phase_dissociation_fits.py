@@ -324,11 +324,8 @@ def bootstrap_two_phase_fits(grouped, x, params, nboot=1000, ci=[2.5,97.5], plot
 		median_fluorescence = np.nanmedian(data, axis=0)
 
 		# Heuristics to decide if fit should happen
-
-		# Make sure there was something bound in the first point
-		if median_fluorescence[0] < 0.2:
-
-
+		# (Add here?)
+		
 		fit_model = Model(double_exp_decay)
 		fit = fit_model.fit(median_fluorescence, params, x=x)
 		
