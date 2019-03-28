@@ -104,7 +104,8 @@ def main():
 
 	if args.multiguide_group:
 		print "Only fitting variants in multiguide group {}".format(args.multiguide_group)
-		group_ids = variant_df[variant_df.guide_number.apply(guide_group) == args.multiguide_group].variant_ID.values
+		group_ids = list(variant_df[variant_df.guide_number.apply(guide_group) == args.multiguide_group].variant_ID.values)
+		group_ids.append('11111111')
 		annot_df = annot_df[annot_df.variant_ID.isin(group_ids)].copy()
 
 	# Merge annot and cpseries
