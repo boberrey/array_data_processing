@@ -208,7 +208,7 @@ def bootstrap_fits(grouped, x, params, nboot=1000, ci=[2.5,97.5], plot_dir=None)
 		fit_model = Model(single_exp_decay)
 
 		try:
-			fit = fit_model.fit(median_fluorescence, params, x=x, nan_policy='omit')
+			fit = fit_model.fit(median_fluorescence, params, x=x)
 		except:
 			print "Error while fitting {}".format(vID)
 			continue
@@ -235,7 +235,7 @@ def bootstrap_fits(grouped, x, params, nboot=1000, ci=[2.5,97.5], plot_dir=None)
 			#meds = data.sample(n=nclust, replace=True).median().values
 			meds = np.nanmedian(data[np.random.choice(nclust, size=nclust, replace=True)], axis=0)
 			try:
-				fit = fit_model.fit(meds, params, x=x, nan_policy='omit')
+				fit = fit_model.fit(meds, params, x=x)
 			except:
 				print "Error while bootstrap fitting {}".format(vID)
 				continue
@@ -245,9 +245,9 @@ def bootstrap_fits(grouped, x, params, nboot=1000, ci=[2.5,97.5], plot_dir=None)
 			fmin_lst.append(fit.params['fmin'].value)
 		
 		# Get confidence intervals
-		koff_2p5, koff_97p5 = np.percentile(koff_lst, q=ci)
-		fmax_2p5, fmax_97p5 = np.percentile(fmax_lst, q=ci)
-		fmin_2p5, fmin_97p5 = np.percentile(fmin_lst, q=ci)
+		koff_2p5, koff_97p5 = np.nanpercentile(koff_lst, q=ci)
+		fmax_2p5, fmax_97p5 = np.nanpercentile(fmax_lst, q=ci)
+		fmin_2p5, fmin_97p5 = np.nanpercentile(fmin_lst, q=ci)
 		results_dict[vID]['koff_2p5'] = koff_2p5
 		results_dict[vID]['koff_97p5'] = koff_97p5
 		results_dict[vID]['fmax_2p5'] = fmax_2p5
@@ -256,7 +256,7 @@ def bootstrap_fits(grouped, x, params, nboot=1000, ci=[2.5,97.5], plot_dir=None)
 		results_dict[vID]['fmin_97p5'] = fmin_97p5
 		
 		# Get median confidence intervals for plotting
-		med_ci = np.percentile(med_array, q=ci, axis=0)
+		med_ci = np.nanpercentile(med_array, q=ci, axis=0)
 		yerr = abs(median_fluorescence - med_ci)
 		
 		# Plot fit

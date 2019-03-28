@@ -325,7 +325,7 @@ def bootstrap_two_phase_fits(grouped, x, params, nboot=1000, ci=[2.5,97.5], plot
 
 		# Heuristics to decide if fit should happen
 		# (Add here?)
-		
+
 		fit_model = Model(double_exp_decay)
 		fit = fit_model.fit(median_fluorescence, params, x=x)
 		
@@ -357,9 +357,9 @@ def bootstrap_two_phase_fits(grouped, x, params, nboot=1000, ci=[2.5,97.5], plot
 			fmin_lst.append(fit.params['fmin'].value)
 		
 		# Get confidence intervals
-		k1_2p5, k1_97p5 = np.percentile(k1_lst, q=ci)
-		fmax_2p5, fmax_97p5 = np.percentile(fmax_lst, q=ci)
-		fmin_2p5, fmin_97p5 = np.percentile(fmin_lst, q=ci)
+		k1_2p5, k1_97p5 = np.nanpercentile(k1_lst, q=ci)
+		fmax_2p5, fmax_97p5 = np.nanpercentile(fmax_lst, q=ci)
+		fmin_2p5, fmin_97p5 = np.nanpercentile(fmin_lst, q=ci)
 		results_dict[vID]['k1_2p5'] = k1_2p5
 		results_dict[vID]['k1_97p5'] = k1_97p5
 		results_dict[vID]['fmax_2p5'] = fmax_2p5
@@ -368,7 +368,7 @@ def bootstrap_two_phase_fits(grouped, x, params, nboot=1000, ci=[2.5,97.5], plot
 		results_dict[vID]['fmin_97p5'] = fmin_97p5
 		
 		# Get median confidence intervals for plotting
-		med_ci = np.percentile(med_array, q=ci, axis=0)
+		med_ci = np.nanpercentile(med_array, q=ci, axis=0)
 		yerr = abs(median_fluorescence - med_ci)
 		
 		# Plot fit
