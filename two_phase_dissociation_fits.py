@@ -126,14 +126,14 @@ def main():
 	if args.constrain_k2 or args.constrain_a2:
 		start = time.time()
 		print "Estimating constrained parameters..."
-		to_constran = []
+		to_constrain = []
 		if args.constrain_k2:
-			to_constran.append("k2")
+			to_constrain.append("k2")
 		if args.constrain_a2:
-			to_constran.append("a2")
+			to_constrain.append("a2")
 		# If constraining one or more parameters, bootstrap global fits to get estimate for constrained value
 		nboot = 100
-		fit_size = 200
+		fit_size = 250
 
 		# Only use variants that have reasonably high binding to estimate constrained parameters
 		median_df = grouped.agg(np.median)
@@ -151,21 +151,23 @@ def main():
 			print "Estimating constrained parameters on {} cores...".format(num_cores)
 			param_estimates = (Parallel(n_jobs=num_cores, verbose=10)\
 				(delayed(estimate_params_global)(
-					ds, diss_times, to_constran) for ds in datasets))
+					ds, diss_times, to_constrain) for ds in datasets))
 		else:
 			print "Estimating constrained parameters on a single core"
 			param_estimates = [estimate_params_global(
-				ds, diss_times, to_constran) for ds in datasets]
+				ds, diss_times, to_constrain) for ds in datasets]
 
 	
 		param_df = pd.DataFrame(param_estimates)
-		param_df.columns = to_constran
+		param_df.columns = to_constrain
 		param_df.to_csv('param_estimates.txt', sep='\t', index=False)
 		if args.constrain_k2:
-			k2 = {"value":param_df.k2.median(), "vary":False}
+			k2_low, k2_high = np.nanpercentile(param_df.k2.values, q=[5, 95])
+			k2 = {"value":param_df.k2.median(), "vary":True, "min":k2_low, "max": k2_high}
 		if args.constrain_a2:
 			#a2 = {"value":param_df.a2.median(), "vary":False}
-			a2 = {"value":param_df.a2.median(), "vary":True, "max": param_df.a2.median()}
+			a2_low, a2_high = np.nanpercentile(param_df.k2.values, q=[5, 95])
+			a2 = {"value":param_df.a2.median(), "vary":False, "min": a2_low, "max": a2_high}
 		print "Constrained parameters fit, {} minutes".format(round((time.time() - start)/60.0, 3))
 	
 	# Create params for fitting
@@ -215,7 +217,7 @@ def estimate_params_global(data, x_vals, param_list=["k2", "a2"]):
 		fit_params.add('fmax_{}'.format(i+1), value=1.0, min=-np.inf, max=np.inf)
 		fit_params.add('k1_{}'.format(i+1), value=0.001, min=-np.inf, max=np.inf)
 		fit_params.add('k2_{}'.format(i+1), value=0.001, min=-np.inf, max=np.inf)
-		fit_params.add('a2_{}'.format(i+1), vary=True, value=0.1, min=0.0, max=1.0)
+		fit_params.add('a2_{}'.format(i+1), value=0.1, min=0.0, max=1.0)
 
 	# Now constrain certain parameters
 	for i in range(1, nvar):
@@ -332,12 +334,16 @@ def bootstrap_two_phase_fits(grouped, x, params, nboot=1000, ci=[2.5,97.5], plot
 		
 		# Things we want to report
 		results_dict[vID] = {
-			'k1': fit.params['k1'].value, 
+			'k1': fit.params['k1'].value,
+			'k2': fit.params['k2'].value,
+			'a2': fit.params['a2'].value,
 			'fmax': fit.params['fmax'].value, 
 			'fmin': fit.params['fmin'].value, 
 			'diss_rsq': 1 - fit.residual.var() / np.var(median_fluorescence), 
 			'ier': fit.ier,
 			'k1_stderr': fit.params['k1'].stderr,
+			'k2_stderr': fit.params['k2'].stderr,
+			'a2_stderr': fit.params['a2'].stderr,
 			'fmax_stderr': fit.params['fmax'].stderr,
 			'fmin_stderr': fit.params['fmin'].stderr,
 			'nclust': nclust,
@@ -346,23 +352,35 @@ def bootstrap_two_phase_fits(grouped, x, params, nboot=1000, ci=[2.5,97.5], plot
 		# Now bootstrap parameters
 		med_array = np.empty((nboot, len(x)))
 		k1_lst = []
+		k2_lst = []
+		a2_lst = []
 		fmax_lst = []
 		fmin_lst = []
 		for b in range(nboot):
-			#meds = data.sample(n=nclust, replace=True).median().values
 			meds = np.nanmedian(data[np.random.choice(nclust, size=nclust, replace=True)], axis=0)
-			fit = fit_model.fit(meds, params, x=x)
+			try:
+				fit = fit_model.fit(meds, params, x=x)
+			except:
+				print "Error while bootstrap fitting {}".format(vID)
+				continue
 			med_array[b] = meds
 			k1_lst.append(fit.params['k1'].value)
+			k2_lst.append(fit.params['k2'].value)
 			fmax_lst.append(fit.params['fmax'].value)
 			fmin_lst.append(fit.params['fmin'].value)
 		
 		# Get confidence intervals
 		k1_2p5, k1_97p5 = np.nanpercentile(k1_lst, q=ci)
+		k2_2p5, k2_97p5 = np.nanpercentile(k2_lst, q=ci)
+		a2_2p5, a2_97p5 = np.nanpercentile(a2_lst, q=ci)
 		fmax_2p5, fmax_97p5 = np.nanpercentile(fmax_lst, q=ci)
 		fmin_2p5, fmin_97p5 = np.nanpercentile(fmin_lst, q=ci)
 		results_dict[vID]['k1_2p5'] = k1_2p5
 		results_dict[vID]['k1_97p5'] = k1_97p5
+		results_dict[vID]['k2_2p5'] = k2_2p5
+		results_dict[vID]['k2_97p5'] = k2_97p5
+		results_dict[vID]['a2_2p5'] = a2_2p5
+		results_dict[vID]['a2_97p5'] = a2_97p5
 		results_dict[vID]['fmax_2p5'] = fmax_2p5
 		results_dict[vID]['fmax_97p5'] = fmax_97p5
 		results_dict[vID]['fmin_2p5'] = fmin_2p5
@@ -392,7 +410,9 @@ def bootstrap_two_phase_fits(grouped, x, params, nboot=1000, ci=[2.5,97.5], plot
 
 
 def plot_bootstrapped_double_exp_fit(ax, x, y, y_ci, 
-									 k1, k1_ci, k2, a2,
+									 k1, k1_ci, 
+									 k2, k2_ci,
+									 a2, a2_ci,
 									 fmin, fmin_ci, 
 									 fmax, fmax_ci, 
 									 showParams=True, showR2=True):
@@ -410,8 +430,8 @@ def plot_bootstrapped_double_exp_fit(ax, x, y, y_ci,
 	
 	rsq = 1 - np.var(double_exp_decay(x, fmin, fmax, k1, k2, a2) - y) / np.var(y)
 	
-	y_lower = double_exp_decay(fit_x, fmin_ci[0], fmax_ci[0], k1_ci[0], k2, a2)
-	y_upper = double_exp_decay(fit_x, fmin_ci[1], fmax_ci[1], k1_ci[1], k2, a2)
+	y_lower = double_exp_decay(fit_x, fmin_ci[0], fmax_ci[0], k1_ci[0], k2_ci[0], a2_ci[0])
+	y_upper = double_exp_decay(fit_x, fmin_ci[1], fmax_ci[1], k1_ci[1], k2_ci[1], a2_ci[1])
 	ax.fill_between(fit_x, y_lower, y_upper, alpha=0.2)
 	ax.set_xlabel("Time (s)")
 	ax.set_ylabel("Normalized Fluorescence (a.u.)")
