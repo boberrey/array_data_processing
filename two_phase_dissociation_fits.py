@@ -132,8 +132,8 @@ def main():
 		if args.constrain_a2:
 			to_constrain.append("a2")
 		# If constraining one or more parameters, bootstrap global fits to get estimate for constrained value
-		nboot = 100
-		fit_size = 500
+		nboot = 500
+		fit_size = 250
 
 		# Only use variants that have reasonably high binding to estimate constrained parameters
 		median_df = grouped.agg(np.median)
@@ -397,7 +397,10 @@ def bootstrap_two_phase_fits(grouped, x, params, nboot=1000, ci=[2.5,97.5], plot
 			ax = plot_bootstrapped_double_exp_fit(ax, x, median_fluorescence, yerr, 
 											 results_dict[vID]['k1'], 
 											 [k1_2p5, k1_97p5], 
-											 fit.params['k2'].value, fit.params['a2'].value, 
+											 fit.params['k2'].value, 
+											 [k2_2p5, k2_97p5],
+											 fit.params['a2'].value, 
+											 [a2_2p5, a2_97p5],
 											 results_dict[vID]['fmin'], 
 											 [fmin_2p5, fmin_97p5], 
 											 results_dict[vID]['fmax'], [fmax_2p5, fmax_97p5])
