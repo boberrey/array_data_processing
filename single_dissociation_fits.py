@@ -18,6 +18,7 @@ import os
 import random
 from lmfit import Parameters, minimize, Model, report_fit
 from joblib import Parallel, delayed
+from itertools import compress
 import time
 
 
@@ -103,7 +104,11 @@ def main():
 		print "Only fitting variants in multiguide group {}".format(args.multiguide_group)
 		group_ids = list(variant_df[variant_df.guide_number.apply(guide_group) == args.multiguide_group].variant_ID.values)
 		group_ids.append('11111111')
-		annot_df = annot_df[annot_df.variant_ID.isin(group_ids)].copy()
+		groups = annot_df.groupby('variant_ID').groups.keys()
+		# Need to do this elaborate filtering procedure to keep variants that have multiple variant IDs
+		valid = [contains_variant_ID(g, group_ids) for g in groups]
+		valid_groups = list(compress(groups, valid))
+		annot_df = annot_df[annot_df.variant_ID.isin(valid_groups)].copy()
 
 
 	# Merge annot and cpseries
@@ -146,7 +151,7 @@ def main():
 
 	print "Fitting finished, {} minutes.".format(round((time.time() - start)/60.0, 3))
 	full_fit_df = pd.concat(fit_df_list)
-	full_fit_df.to_csv('double_exp_koff_fits_uptoa2.txt', sep='\t')
+	full_fit_df.to_csv('single_exponential_dissociation_fits.txt', sep='\t')
 
 
 
@@ -331,6 +336,14 @@ def guide_group(guide_label):
 		return group
 	else:
 		return "no group"
+
+
+def contains_variant_ID(varID, valid_IDs):
+    ids = varID.split(';')
+    if any([v in valid_IDs for v in ids]):
+        return True
+    return False
+
 
 
 if __name__ == '__main__':
