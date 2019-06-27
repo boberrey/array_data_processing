@@ -22,6 +22,7 @@ from collections import OrderedDict
 # Solar extra (aka the Jason classic)
 solar_extra_colors = ['#3361A5', '#248AF3', '#14B3FF', '#88CEEF', '#C1D5DC', '#EAD397', '#FDB31A','#E42A2A','#A31D1D']
 solar_extra = mpl.colors.LinearSegmentedColormap.from_list('CustomMap', solar_extra_colors)
+solar_extra_r = mpl.colors.LinearSegmentedColormap.from_list('CustomMap', solar_extra_colors[::-1])
 
 
 
@@ -527,14 +528,21 @@ def invert_annot_numbering(annot, max_num):
 ### Double Mutant Heatmap Plotting ###
 ######################################
 
-def parse_point_mut_annot(annotation):
+def parse_point_mut_annot(annotation, out='swaps'):
     """
     Pull out the individual mutations from a point mutant annotation.
     Return these point mutations as a list.
     """
     swaps = annotation.split('_')[-1]
     individual_swaps = swaps.split(',')
-    return individual_swaps
+    if out=='swaps':
+        return individual_swaps
+    if out=='pos':
+        positions = []
+        for swap in individual_swaps:
+            num, text = re.split('(\d+)', swap)[1:]
+            positions.append(int(num))
+        return sorted(positions)
 
 
 def construct_double_mut_df(dm_df, value, annot_col="annotation"):
@@ -576,6 +584,47 @@ def construct_double_mut_df(dm_df, value, annot_col="annotation"):
         df_to_fill.loc[mut2, mut1] = value
 
     df_data.apply(lambda x: fill_in_dm_frame(x, new_frame), axis=1)      
+    
+    return new_frame
+
+
+def construct_position_median_dm_df(dm_df, value, annot_col="mut_annotation"):
+    """
+    Construct a square data frame of position-median double mutant values 
+    (i.e. median of 9 for a single dataset)
+    Inputs:
+        dm_df (DataFrame) -- A dataframe of double mutants to be formatted into
+            the square dataframe. Must contain a column of 'Ago-style' double
+            mutant annotations.
+        value (str) -- the column name indicating which value should be put in
+            the square double mutant dataframe.
+        annot_col (str) -- the annotation column name
+    Outputs:
+        new_frame (DataFrame) -- a square dataframe containing the indicated
+            value at double mutant coordinate positions. This dataframe will
+            be symmetric across the BL-TR diagonal.
+    """
+    
+    # split mutations annotations and get value of interest:
+    list_data = dm_df.apply(lambda x: \
+                            parse_point_mut_annot(x[annot_col], out='pos')  + [x[value]], 
+                            axis=1).tolist()
+    df_data = pd.DataFrame(list_data)
+    df_data.columns = ['first_mut', 'second_mut', 'value']
+    
+    # Get a sorted list of all possible base swaps:
+    keys = sorted(list(set([x[0] for x in list_data] + [x[1] for x in list_data])))
+
+    # Fill in square dataframe with desired double mutant values
+    new_frame = pd.DataFrame(index=keys[::-1], columns=keys)
+
+    for i in range(1, len(keys)+1,1):
+        for j in range(1, i, 1):
+            if i == j:
+                continue
+            med_dat = df_data[(df_data.first_mut == j) & (df_data.second_mut == i)]['value'].median()
+            new_frame.loc[i,j] = med_dat
+            new_frame.loc[j,i] = med_dat
     
     return new_frame
 

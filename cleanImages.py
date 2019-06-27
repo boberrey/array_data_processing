@@ -22,8 +22,11 @@ import re
 import uuid
 import subprocess
 import time
+import numpy as np
 from collections import OrderedDict
 from joblib import Parallel, delayed
+from PIL import Image
+from glob import glob
 
 
 ##### Gloval vars #####
@@ -43,10 +46,14 @@ def main():
         help='path to the directory in which the "GlobalVars.m" parameter file \
         for the run can be found')
     group = parser.add_argument_group('optional arguments')
-    group.add_argument('-ma', '--max_val', type=int, default=4000,
+    group.add_argument('-ma', '--max_val', type=int, default=4095,
         help='fluorescence intensity value that triggers cleaning')
     group.add_argument('-mn', '--min_val', type=int, default=1500,
         help='fluorescence value that triggers end of cleaning')
+    group.add_argument('-smax', '--smart_max', action="store_true",
+        help='Pick the max_val based on the image directory provided. Set min to min(mean + 10*sigma, 4095) of the first image.')
+    group.add_argument('-smin', '--smart_min', action="store_true",
+        help='Pick the min_val based on the image directory provided. Set min to mean + 3*sigma of the first image.')
 
     # print help if no arguments provided
     if len(sys.argv) <= 1:
@@ -70,10 +77,27 @@ def main():
         print("Error: invalid cleaned image directory selection. Exiting...")
         sys.exit()
 
+    # Determine cleaning cutoffs
+    # max_val is the pixel intensity that triggers cleaning
+    # min_val is the pixel intensity that indicates when to stop cleaning
+    min_val = args.min_val
+    max_val = args.max_val
+    if args.smart_min or args.smart_max:
+        # Read in first image and estimate min_val
+        im_file = glob(image_dir + '/*.' + image_extension)[0]
+        im = Image.open(im_file)
+        px = list(im.getdata())
+        if args.smart_min:
+            min_val = np.mean(px) + 3*np.std(px)
+        if args.smart_max:
+            max_val = min(np.mean(px) + 10*np.std(px), 4095)
+
+
+    print "Cleaning images with max_val = {} and min_val = {}".format(max_val, min_val)
 
     # Run Clean image script
 
-    logstring = cleanImages(image_dir, cleaned_image_dir, args.max_val, args.min_val, args.global_vars_path)
+    logstring = cleanImages(image_dir, cleaned_image_dir, max_val, min_val, args.global_vars_path)
 
 
 def cleanImages(image_dir, cleaned_image_dir, max_val, min_val, global_vars_path):
