@@ -242,9 +242,9 @@ def bootstrap_fits(grouped, x, label_dict, nboot=1000, ci=[2.5,97.5], plot_dir=N
         ## Things we want to report
         # quality of fit:
         ss_error = np.sum((fit.residual)**2)
-        ss_total = np.sum((median_fluorescence - np.nanmean(median_fluorescence)))
+        ss_total = np.sum((median_fluorescence - np.nanmean(median_fluorescence))**2)
         rsq = 1 - ss_error/ss_total
-        rmse = np.sqrt(ss_error)
+        rmse = np.sqrt(np.nanmean((fit.residual)**2))
         results_dict[vID] = {
             'koff': fit.params['koff'].value, 
             'fmax': fit.params['fmax'].value, 
