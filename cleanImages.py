@@ -51,7 +51,7 @@ def main():
     group.add_argument('-mn', '--min_val', type=int, default=1500,
         help='fluorescence value that triggers end of cleaning')
     group.add_argument('-smax', '--smart_max', action="store_true",
-        help='Pick the max_val based on the image directory provided. Set min to min(mean + 10*sigma, 4095) of the first image.')
+        help='Pick the max_val based on the image directory provided. Set min to min(mean + 10*sigma, 4095) of the last image.')
     group.add_argument('-smin', '--smart_min', action="store_true",
         help='Pick the min_val based on the image directory provided. Set min to mean + 3*sigma of the first image.')
 
@@ -83,14 +83,16 @@ def main():
     min_val = args.min_val
     max_val = args.max_val
     if args.smart_min or args.smart_max:
-        # Read in first image and estimate min_val
-        im_file = glob(image_dir + '/*.' + image_extension)[0]
+        # Read in last image and estimate min_val
+        im_file = glob(image_dir + '/*.' + image_extension)[-1]
         im = Image.open(im_file)
         px = list(im.getdata())
         if args.smart_min:
-            min_val = np.mean(px) + 3*np.std(px)
+            min_val = np.mean(px) + 5*np.std(px)
         if args.smart_max:
             max_val = min(np.mean(px) + 10*np.std(px), 4095)
+            # Don't clean on less than 2000
+            max_val = max(max_val, 2000)
 
 
     print "Cleaning images with max_val = {} and min_val = {}".format(max_val, min_val)
