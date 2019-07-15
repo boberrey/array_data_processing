@@ -239,7 +239,9 @@ def bootstrap_fits(grouped, x, label_dict, nboot=1000, ci=[2.5,97.5], plot_dir=N
         # Set initial fmax to first observed fluorescence value
         params = single_exp_decay_params(
                 fmax={"value": median_fluorescence[0], "vary": True},
-                span={"value": median_fluorescence[0], "vary": True}
+                #span={"value": meds[0], "vary": True}
+                # Seems to be more stable when starting the span here...
+                span={"value": 0.1, "vary": True}
                 )
 
         fit_model = Model(single_exp_decay)
@@ -280,7 +282,9 @@ def bootstrap_fits(grouped, x, label_dict, nboot=1000, ci=[2.5,97.5], plot_dir=N
             meds = np.nanmedian(data[np.random.choice(nclust, size=nclust, replace=True)], axis=0)
             params = single_exp_decay_params(
                 fmax={"value": meds[0], "vary": True},
-                span={"value": meds[0], "vary": True}
+                #span={"value": meds[0], "vary": True}
+                # Seems to be more stable when starting the span here...
+                span={"value": 0.1, "vary": True}
                 )
             try:
                 fit = fit_model.fit(meds, params, x=x)
