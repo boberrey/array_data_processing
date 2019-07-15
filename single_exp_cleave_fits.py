@@ -209,12 +209,15 @@ def single_exp_decay_params(fmax=None, span=None, koff=None):
     if koff:
         for opt, val in koff.items():
             default_params["koff"][opt] = val
+    if span:
+        for opt, val in span.items():
+            default_params["span"][opt] = val
 
     for p, dct in default_params.items():
         params.add(p, **dct)
 
     # Enforce that fmax > fmin and that fmin <= 0.3*fmax
-    params.add("fmin", value=0.0, expr='max(0.3*fmax - span, 0)')
+    params.add("fmin", value=0.0, expr='min([0.3*fmax - span, 0])')
     return params
 
 
