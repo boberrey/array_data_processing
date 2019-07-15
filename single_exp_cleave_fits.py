@@ -214,7 +214,7 @@ def single_exp_decay_params(fmax=None, span=None, koff=None):
         params.add(p, **dct)
 
     # Enforce that fmax > fmin and that fmin <= 0.3*fmax
-    params.add("fmin", value=0.0, expr='0.3*fmax - span')
+    params.add("fmin", value=0.0, expr='max(0.3*fmax - span, 0)')
     return params
 
 
