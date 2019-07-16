@@ -140,7 +140,8 @@ def main():
 
     # Normalize everything by normalization variants
     print "Normalizing to variants in norm table..."
-    norm_series = merged_df[merged_df.variant_ID.isin(list(norm_df.variant_ID.values))]
+    norm_var_IDs = [str(x) for x in norm_df.variant_ID.values]
+    norm_series = merged_df[merged_df.variant_ID.isin(norm_var_IDs)]
     norm_meds = norm_series.iloc[:,1:].median().values
 
     #fiducial_meds = merged_df.groupby('variant_ID').get_group('11111111').iloc[:,1:].median().values
