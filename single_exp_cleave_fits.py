@@ -201,7 +201,7 @@ def single_exp_decay_params(fmax=None, span=None, koff=None):
     default_params = {
         "fmax":{"value": 1.0, "vary": True, "min": -np.inf, "max": np.inf},
         "span":{"value": 0.1, "vary": True, "min":0.0, "max":np.inf},
-        "koff":{"value": 0.001, "vary": True, "min": 0.0, "max": np.inf}
+        "koff":{"value": 0.001, "vary": True, "min": -np.inf, "max": np.inf}
 
     }
     if fmax:
