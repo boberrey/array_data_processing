@@ -344,8 +344,8 @@ def bootstrap_fits(grouped, x, label_dict, nboot=1000, ci=[2.5,97.5], plot_dir=N
             if results_dict[vID]['koff'] > 0.001:
                 ax.set_xlim(-10.0, 7210)
                 for v in vID.split(';'):
-                file_name = "/{}_{}.pdf".format(v,label_dict[v])
-                plt.savefig(plot_dir+file_name, dpi=300)
+                    file_name = "/{}_{}.pdf".format(v,label_dict[v])
+                    plt.savefig(plot_dir+file_name, dpi=300)
             plt.close()
         
     return pd.DataFrame(results_dict).T
