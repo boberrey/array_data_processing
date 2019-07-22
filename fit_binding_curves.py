@@ -339,9 +339,9 @@ def bootstrap_fits(grouped, x, tight_fmaxes, label_dict, fmin_val=0.0, nboot=100
         ## Things we want to report
         # quality of fit:
         ss_error = np.sum((fit.residual)**2)
-        ss_total = np.sum((median_fluorescence - np.nanmean(median_fluorescence)))
+        ss_total = np.sum((median_fluorescence - np.nanmean(median_fluorescence))**2)
         rsq = 1 - ss_error/ss_total
-        rmse = np.sqrt(ss_error)
+        rmse = np.sqrt(np.nanmean((fit.residual)**2))
 
         results_dict[vID] = {
             'Kd': fit.params['Kd'].value, 
