@@ -200,12 +200,15 @@ def single_exp_decay_params(fmax=None, span=None, koff=None):
     if koff:
         for opt, val in koff.items():
             default_params["koff"][opt] = val
+    if span:
+        for opt, val in span.items():
+            default_params["span"][opt] = val
 
     for p, dct in default_params.items():
         params.add(p, **dct)
 
     # Enforce that fmax > fmin and that fmin <= 0.3*fmax
-    params.add("fmin", value=0.0, expr='0.3*fmax - span')
+    params.add("fmin", value=0.1, expr='max([0.3*fmax - span, 0.01])')
     return params
 
 
@@ -227,7 +230,7 @@ def bootstrap_fits(grouped, x, label_dict, nboot=1000, ci=[2.5,97.5], plot_dir=N
         # Set initial fmax to first observed fluorescence value
         params = single_exp_decay_params(
                 fmax={"value": median_fluorescence[0], "vary": True},
-                span={"value": median_fluorescence[0], "vary": True}
+                #span={"value": median_fluorescence[0], "vary": True}
                 )
 
         fit_model = Model(single_exp_decay)
@@ -268,7 +271,7 @@ def bootstrap_fits(grouped, x, label_dict, nboot=1000, ci=[2.5,97.5], plot_dir=N
             meds = np.nanmedian(data[np.random.choice(nclust, size=nclust, replace=True)], axis=0)
             params = single_exp_decay_params(
                 fmax={"value": meds[0], "vary": True},
-                span={"value": meds[0], "vary": True}
+                #span={"value": meds[0], "vary": True}
                 )
             try:
                 fit = fit_model.fit(meds, params, x=x)
