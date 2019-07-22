@@ -185,7 +185,7 @@ def single_exp_decay(x, fmin, fmax, koff):
     return fmin + (fmax - fmin)*np.exp(-koff*x)
 
 
-"""
+
 def single_exp_decay_params(fmax=None, span=None, koff=None):
     # Define parameters object
     params = Parameters()
@@ -209,10 +209,11 @@ def single_exp_decay_params(fmax=None, span=None, koff=None):
         params.add(p, **dct)
 
     # Enforce that fmax > fmin and that fmin <= 0.3*fmax
-    params.add("fmin", value=0.1, expr='max([0.3*fmax - span, 0.01])')
+    params.add("fmin", value=0.01, expr='0.3*fmax - span')
     return params
-"""
 
+
+"""
 def single_exp_decay_params(fmax=None, fmin=None, koff=None):
     # Define parameters object
     params = Parameters()
@@ -236,7 +237,7 @@ def single_exp_decay_params(fmax=None, fmin=None, koff=None):
         params.add(p, **dct)
 
     return params
-
+"""
 
 
 def bootstrap_fits(grouped, x, label_dict, nboot=1000, ci=[2.5,97.5], plot_dir=None):
@@ -256,7 +257,7 @@ def bootstrap_fits(grouped, x, label_dict, nboot=1000, ci=[2.5,97.5], plot_dir=N
         # Set initial fmax to first observed fluorescence value
         params = single_exp_decay_params(
                 fmax={"value": max(median_fluorescence), "vary": True},
-                fmin={"value": min(median_fluorescence), "vary": True}
+                #fmin={"value": min(median_fluorescence), "vary": True}
                 )
 
         fit_model = Model(single_exp_decay)
@@ -297,7 +298,7 @@ def bootstrap_fits(grouped, x, label_dict, nboot=1000, ci=[2.5,97.5], plot_dir=N
             meds = np.nanmedian(data[np.random.choice(nclust, size=nclust, replace=True)], axis=0)
             params = single_exp_decay_params(
                 fmax={"value": max(median_fluorescence), "vary": True},
-                fmin={"value": min(median_fluorescence), "vary": True}
+                #fmin={"value": min(median_fluorescence), "vary": True}
                 )
             try:
                 fit = fit_model.fit(meds, params, x=x)
