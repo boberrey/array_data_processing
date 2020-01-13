@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """ 
 Fit binding curves across a CPseries file
+
  Ben Ober-Reynolds, boberrey@stanford.edu
  20190620
 """
@@ -29,7 +30,7 @@ def main():
     ################ Parse input parameters ################
 
     #set up command line argument parser
-    parser = argparse.ArgumentParser(description='Script for fitting binding curves for a CPseries file')
+    parser = argparse.ArgumentParser(description='Script for fitting equilibrium binding curves for a CPseries file')
     group = parser.add_argument_group('required arguments:')
     group.add_argument('-cs', '--cpseries', required=True,
                         help='CPseries.pkl file')
@@ -41,8 +42,12 @@ def main():
                         help='experiment variant table')
 
     group = parser.add_argument_group('optional arguments for processing data')
+    group.add_argument('-nt', '--norm_table',
+                        help='normalization variant table')
     group.add_argument('-n','--num_cores', type=int, default=10,
                         help='number of cores to use')
+    group.add_argument('-rf','--rsq_filter', type=float, default=0.7,
+                        help='R squared filter for removing clusters based on single cluster fits')
     group.add_argument('-mg','--multiguide_group', default=None,
                         help='Which multiguide group to restrict to.')
     group.add_argument('-pl','--plots', action="store_true",
@@ -63,7 +68,9 @@ def main():
     cpannot_file = args.cpannot
     concentration_file = args.concentrations
     variant_file = args.variant_table
+    norm_file = args.norm_table
     num_cores = args.num_cores
+    rsq_filter = float(args.rsq_filter)
 
     # Make the plot directory if plotting
     if args.plots:
@@ -122,71 +129,104 @@ def main():
     merged_df = annot_df.merge(binding_df, left_index=True, right_index=True, how='inner')
 
     # Normalize everything by fiducial signal
-    print "Normalizing to fiducial..."
-    fiducial_meds = merged_df.groupby('variant_ID').get_group('11111111').iloc[:,1:].median().values
-    merged_df.iloc[:,1:] = merged_df.iloc[:,1:] / fiducial_meds
+    #print "Normalizing to fiducial..."
+    #fiducial_meds = merged_df.groupby('variant_ID').get_group('11111111').iloc[:,1:].median().values
+    #merged_df.iloc[:,1:] = merged_df.iloc[:,1:] / fiducial_meds
+
+    # Normalize everything by normalization variants if provided
+    if norm_file:
+        print "Normalizing to variants in norm table..."
+        norm_df = pd.read_table(norm_file, header=None)
+        if len(variant_df.columns) == 6:
+            norm_df.columns = ['Sequence', 'variant_ID', 'group_name', 'mut_annotation', 'wt_seq', 'guide_number']
+        else:
+            norm_df.columns = ['Sequence', 'variant_ID', 'group_name', 'mut_annotation']
+        norm_var_IDs = [str(x) for x in norm_df.variant_ID.values]
+        norm_series = merged_df[merged_df.variant_ID.isin(norm_var_IDs)]
+        norm_meds = norm_series.iloc[:,1:].median().values
+
+        merged_df.iloc[:,1:] = merged_df.iloc[:,1:] / norm_meds
 
     # Force fmin to simply be the median signal across all variants
     fmin_val = float(merged_df.iloc[:,1].median())
 
-
-    ##############################################
-    # MAD filter for outlier fluorescence clusters
-    ##############################################
-
-    mad_cut = 3.0
-    print "Performing mad filtering with cutoff of {}...".format(mad_cut)
-    initial_length = len(merged_df.index)
-    mad_filt_df = MAD_filter_clusters(merged_df, mad_cutoff=mad_cut)
-    filt_length = len(mad_filt_df.index)
-    print "Removed {} outlier clusters ({}%)".format(initial_length - filt_length, round(100*(initial_length - filt_length)/float(initial_length), 3))
-
     ###########################################
-    # Perform initial median fluorescence fits
+    # Perform single cluster fits
     ###########################################
 
-    # groupby variant_ID
-    grouped = mad_filt_df.groupby('variant_ID')
+    # Check to see if single clusters have already been fit:
+    single_cluster_filename = 'single_cluster_fits.txt'
+    if os.path.exists(single_cluster_filename):
+        print "Single cluster file already exists. Loading..."
+        sc_fit_df = pd.read_table(single_cluster_filename, index_col=0)
+    else:
+        print "Splitting data into {} chunks and fitting...".format(num_cores)
+        # Now perform the actual fits
+        variant_IDs = list(set(merged_df.variant_ID))
 
+        # shuffle list and then make (num_cores) chunks
+        random.shuffle(variant_IDs)
+        chunk_list = list(make_chunks(variant_IDs, num_cores))
+
+        # Create a new list of dataframes containing chunked variant_IDs
+        grouped_list = [merged_df[merged_df.variant_ID.isin(chunk)].copy().groupby('variant_ID') for chunk in chunk_list]
+
+        # Perform single cluster fits in parallel
+        start = time.time()
+        if num_cores > 1:
+            fit_df_list = (Parallel(n_jobs=num_cores, verbose=10)\
+                (delayed(single_cluster_fits)(
+                    sub_grouped, concentrations, fmin_val) for sub_grouped in grouped_list))
+        else:
+            fit_df_list = [single_cluster_fits(
+                sub_grouped, concentrations, fmin_val) for sub_grouped in grouped_list]
+
+        print "Single cluster fitting finished, {} minutes.".format(round((time.time() - start)/60.0, 3))
+        sc_fit_df = pd.concat(fit_df_list)
+        sc_fit_df.sort_values('variant_ID', inplace=True)
+        sc_fit_df.to_csv('single_cluster_fits.txt', sep='\t')
+
+
+    #####################################################
+    # Filter clusters based on their single cluster fit
+    #####################################################
+    print "Filtering clusters with fit rsq of less than {}".format(rsq_filter)
+    good_sc_df = sc_fit_df[sc_fit_df.rsq > rsq_filter]
+    print "{} of {} ({}%) clusters passed rsq cutoff".format(len(good_sc_df.index), len(sc_fit_df.index), (len(good_sc_df.index)/float(len(sc_fit_df.index)))*100)
+
+    #####################################################
+    # Get empirical fmax distribution of 'tight binders'
+    #####################################################
+
+    # Ensure certain columns are floats:
+    good_sc_df['fmax'] = good_sc_df['fmax'].astype(float)
+
+    # Define 'tight binders' as those that are 95% saturated at second to last point
+    tight_Kd_cutoff = concentrations[-2]/0.95 - concentrations[-2]
+    print "Identifying 'tight binders' with Kd < {}".format(tight_Kd_cutoff)
+    tight_binders = good_sc_df[(good_sc_df.Kd < tight_Kd_cutoff)].copy()
+    tight_binders.to_csv('tight_binder_fits.txt', sep='\t')
+    tight_fmaxes = tight_binders.groupby('variant_ID')['fmax'].median()
+    tight_fmax_2p5, tight_fmax_97p5 = np.nanpercentile(tight_fmaxes, q=[2.5,97.5])
+    conf_fmaxes = tight_fmaxes[(tight_fmaxes > tight_fmax_2p5) & (tight_fmaxes < tight_fmax_97p5)]
+
+
+    #####################################################
+    # Bootstrap fits, enforcing fmax when necessary
+    #####################################################
+
+    # First, resplit data after filtering
     print "Splitting data into {} chunks and fitting...".format(num_cores)
-    # Now perform the actual fits
-    variant_IDs = grouped.groups.keys()
+    filtered_df = merged_df.loc[good_sc_df.index,:].copy()
+
+    variant_IDs = list(set(filtered_df.variant_ID))
 
     # shuffle list and then make (num_cores) chunks
     random.shuffle(variant_IDs)
     chunk_list = list(make_chunks(variant_IDs, num_cores))
 
     # Create a new list of dataframes containing chunked variant_IDs
-    grouped_list = [merged_df[merged_df.variant_ID.isin(chunk)].copy().groupby('variant_ID') for chunk in chunk_list]
-
-    # Perform initial median fits in parallel
-    if num_cores > 1:
-        fit_df_list = (Parallel(n_jobs=num_cores, verbose=10)\
-            (delayed(median_fits)(
-                sub_grouped, concentrations, fmin_val) for sub_grouped in grouped_list))
-    else:
-        fit_df_list = [median_fits(
-            sub_grouped, concentrations, fmin_val) for sub_grouped in grouped_list]
-
-    med_fit_df = pd.concat(fit_df_list)
-    med_fit_df.to_csv('median_variant_fits.txt', sep='\t')
-
-    #####################################################
-    # Get empirical fmax distribution of 'tight binders'
-    #####################################################
-
-    # Define 'tight binders' as those that are 97.5% saturated at last point
-    tight_Kd_cutoff = concentrations[-1]/0.975 - concentrations[-1]
-    print "Identifying 'tight binders' with Kd < {}".format(tight_Kd_cutoff)
-    tight_binders = med_fit_df[(med_fit_df.Kd < tight_Kd_cutoff) & (med_fit_df.rsq > 0.9)].copy()
-    tight_binders.to_csv('tight_binder_fits.txt', sep='\t')
-    tight_fmaxes = tight_binders.fmax.values
-    tight_variants = set(tight_binders.index.values)
-
-
-    #####################################################
-    # Bootstrap fits, enforcing fmax when necessary
-    #####################################################
+    grouped_list = [filtered_df[filtered_df.variant_ID.isin(chunk)].copy().groupby('variant_ID') for chunk in chunk_list]
 
     nboot = 1000
     print "Bootstrapping medians to get confidence intervals on fit parameters..."
@@ -194,44 +234,16 @@ def main():
     if num_cores > 1:
         fit_df_list = (Parallel(n_jobs=num_cores, verbose=10)\
             (delayed(bootstrap_fits)(
-                sub_grouped, concentrations, tight_fmaxes, tight_variants, label_dict, fmin_val=fmin_val, nboot=nboot, plot_dir=plot_dir) for sub_grouped in grouped_list))
+                sub_grouped, concentrations, tight_fmaxes, label_dict, fmin_val=fmin_val, nboot=nboot, plot_dir=plot_dir) for sub_grouped in grouped_list))
     else:
         fit_df_list = [bootstrap_fits(
-            sub_grouped, concentrations, tight_fmaxes, tight_variants, label_dict, fmin_val=fmin_val, nboot=nboot, plot_dir=plot_dir) for sub_grouped in grouped_list]
+            sub_grouped, concentrations, tight_fmaxes, label_dict, fmin_val=fmin_val, nboot=nboot, plot_dir=plot_dir) for sub_grouped in grouped_list]
 
     print "Fitting finished, {} minutes.".format(round((time.time() - start)/60.0, 3))
     full_fit_df = pd.concat(fit_df_list)
-    full_fit_df.to_csv('hill_equation_fits.txt', sep='\t')
+    full_fit_df.to_csv('bootstrapped_fits.txt', sep='\t')
 
 
-
-# MAD filtering
-
-def mad(arr):
-    """
-    Median Absolute Deviation
-    """
-    med = np.nanmedian(arr)
-    return np.nanmedian(np.abs(arr - med))
-
-
-def MAD_filter_clusters(df, mad_cutoff=3.0, n_outliers_allowed=2):
-    """
-    Remove clusters if they contain any outlier fluorescence values
-    """
-    nvals = df.iloc[:,1:].shape[1]
-    grouped = df.groupby('variant_ID')
-    # mad = grouped.apply(lambda x: x.mad(axis=0))
-    groupIDs = grouped.groups.keys()
-    filtered_groups = []
-    for gID in groupIDs:
-        data = grouped.get_group(gID).iloc[:,1:].values
-        med_values = np.nanmedian(data, axis=0)
-        mad_values = np.apply_along_axis(mad, axis=0, arr=data)
-        mad_pass = (nvals - np.sum(abs(data - med_values) < mad_cutoff*mad_values, axis=1)) <= n_outliers_allowed 
-        filtered_groups.append(grouped.get_group(gID).loc[mad_pass,:].copy())
-    new_df = pd.concat(filtered_groups)
-    return new_df
 
 
 # Fitting functions:
@@ -278,63 +290,66 @@ def hill_equation_params(fmax=None, fmin=None, Kd=None, n=None):
     return params
 
 
-def median_fits(grouped, x, fmin_val=0.0):
+def single_cluster_fits(grouped, x, fmin_val=0.0):
     """
-    Fit the median fluorescence for each group of variants.
+    Fit single clusters for each group of variants.
     Save results of fit for use in constraining lower affinity fits.
     Input:
         grouped = pandas groupby object
         x = concentrations
     """
     results_dict = {}
+    fit_model = Model(hill_equation)
     group_IDs = grouped.groups.keys()
+
     for vID in group_IDs:
-        data = grouped.get_group(vID).iloc[:,1:].values
+        df = grouped.get_group(vID)
+        clusterIDs = df.index.values
+        data = df.iloc[:,1:].values
         nclust = data.shape[0]
-        median_fluorescence = np.nanmedian(data, axis=0)
-
-        # Initialize parameters as such:
-        # fmax = max median fluorescence observed (minimum is fmin)
-        # Kd = max protein concentration used
-        # fmin = minimum median fluorescence observed (don't let it float)
-        params = hill_equation_params(
-            fmax={"value":max(median_fluorescence), "min":fmin_val},
-            Kd={"value":max(x)},
-            fmin={"value":fmin_val, "vary":False})
-
-        fit_model = Model(hill_equation)
-        try:
-            fit = fit_model.fit(median_fluorescence, params, x=x)
-        except:
-            #print "Error while fitting {}".format(vID)
-            continue
         
-        ## Things we want to report
-        # quality of fit:
-        ss_error = np.sum((fit.residual)**2)
-        ss_total = np.sum((median_fluorescence - np.nanmean(median_fluorescence))**2)
-        rsq = 1 - ss_error/ss_total
-        rmse = np.sqrt(np.nanmean((fit.residual)**2))
+        for c in range(nclust):
+            fluorescence = data[c,:]
+            # Initialize parameters as such:
+            # fmax = max median fluorescence observed (minimum is fmin)
+            # Kd = max protein concentration used
+            # fmin = minimum median fluorescence observed (don't let it float)
+            params = hill_equation_params(
+                fmax={"value":max(fluorescence), "min":fmin_val},
+                Kd={"value":max(x)},
+                fmin={"value":fmin_val, "vary":False})
+            try:
+                fit = fit_model.fit(fluorescence, params, x=x)
+            except Exception as e:
+                print "Error while fitting {}".format(vID)
+                print str(e)
+                continue
+            ## Things we want to report
+            # quality of fit:
+            ss_error = np.sum((fit.residual)**2)
+            ss_total = np.sum((fluorescence - np.nanmean(fluorescence))**2)
+            rsq = 1 - ss_error/ss_total
+            rmse = np.sqrt(np.nanmean((fit.residual)**2))
 
-        results_dict[vID] = {
-            'Kd': fit.params['Kd'].value, 
-            'fmax': fit.params['fmax'].value, 
-            'fmin': fit.params['fmin'].value, 
-            'rsq': rsq, 
-            'rmse': rmse,
-            'ier': fit.ier,
-            'Kd_stderr': fit.params['Kd'].stderr,
-            'fmax_stderr': fit.params['fmax'].stderr,
-            'fmin_stderr': fit.params['fmin'].stderr,
-            'nclust': nclust,
-        }
+            results_dict[clusterIDs[c]] = {
+                'variant_ID': vID,
+                'Kd': fit.params['Kd'].value, 
+                'fmax': fit.params['fmax'].value, 
+                'fmin': fit.params['fmin'].value, 
+                'rsq': rsq, 
+                'rmse': rmse,
+                'ier': fit.ier,
+                'Kd_stderr': fit.params['Kd'].stderr,
+                'fmax_stderr': fit.params['fmax'].stderr,
+                'fmin_stderr': fit.params['fmin'].stderr,
+            }
         
     return pd.DataFrame(results_dict).T
 
 
 
 
-def bootstrap_fits(grouped, x, tight_fmaxes, tight_variants, label_dict, fmin_val=0.0, nboot=1000, ci=[2.5,97.5], plot_dir=None):
+def bootstrap_fits(grouped, x, tight_fmaxes, label_dict, fmin_val=0.0, nboot=1000, ci=[2.5,97.5], plot_dir=None):
     """
     Fit every group in grouped using the indicated params.
     The median fit is the actually reported fit. Estimate error by 
@@ -350,21 +365,17 @@ def bootstrap_fits(grouped, x, tight_fmaxes, tight_variants, label_dict, fmin_va
         nclust = data.shape[0]
         median_fluorescence = np.nanmedian(data, axis=0)
 
-        # If no median fluorescence value surpasses 2.5th percentile of fmax dist, 
-        # and if variant was not in previously selected tight binder group, 
-        # then enforce fmax distribution
+        # If last median fluorescence point is below 2.5 percentile of tight binder
+        # fmaxes, then enforce fmax distribution
         fmax_force = 0.0
-        if all(median_fluorescence < tight_fmax_2p5) and (vID not in tight_variants):
+        if median_fluorescence[-1] < tight_fmax_2p5:
             fmax_force = 1.0
-            #sampled_fmax = np.random.choice(tight_fmaxes, size=1)[0]
-            med_fmax = np.nanmedian(tight_fmaxes)
+            sampled_fmax = np.random.choice(tight_fmaxes, size=1)[0]
             params = hill_equation_params(
-                fmax={"value": med_fmax, "vary": False}, 
+                fmax={"value": sampled_fmax, "vary": False}, 
                 Kd={"value":max(x)},
                 fmin={"value":fmin_val, "vary":False})
         else:
-            if all(median_fluorescence < tight_fmax_2p5):
-                fmax_force = 2.0
             params = hill_equation_params(
                 fmax={"value":max(median_fluorescence), "min":fmin_val},
                 Kd={"value":max(x)},
@@ -405,9 +416,9 @@ def bootstrap_fits(grouped, x, tight_fmaxes, tight_variants, label_dict, fmin_va
         fmax_array = np.empty(nboot)
         fmin_array = np.empty(nboot)
         for b in range(nboot):
-            sampled_fmax = np.random.choice(tight_fmaxes, size=1)[0]
+            #meds = data.sample(n=nclust, replace=True).median().values
             meds = np.nanmedian(data[np.random.choice(nclust, size=nclust, replace=True)], axis=0)
-            if fmax_force == 1.0:
+            if fmax_force:
                 params = hill_equation_params(
                     fmax={"value": sampled_fmax, "vary": False}, 
                     Kd={"value":max(x)},
@@ -430,18 +441,18 @@ def bootstrap_fits(grouped, x, tight_fmaxes, tight_variants, label_dict, fmin_va
         
         # Get confidence intervals
         # Take the 95% ci around the Kd, and whatever the corresponding fmax and fmin values are
-        # ci_1_idx = np.where(Kd_array == np.nanpercentile(Kd_array, ci[0], interpolation='nearest'))[0][0]
-        # ci_2_idx = np.where(Kd_array == np.nanpercentile(Kd_array, ci[1], interpolation='nearest'))[0][0]
-        # ci_pos = [ci_1_idx, ci_2_idx]
-        # Kd_2p5, Kd_97p5 = Kd_array[ci_pos]
-        # fmax_2p5, fmax_97p5 = fmax_array[ci_pos]
-        # fmin_2p5, fmin_97p5 = fmin_array[ci_pos]
-        # results_dict[vID]['Kd_2p5'] = Kd_2p5
-        # results_dict[vID]['Kd_97p5'] = Kd_97p5
-        # results_dict[vID]['fmax_2p5'] = fmax_2p5
-        # results_dict[vID]['fmax_97p5'] = fmax_97p5
-        # results_dict[vID]['fmin_2p5'] = fmin_2p5
-        # results_dict[vID]['fmin_97p5'] = fmin_97p5
+        #ci_1_idx = np.where(Kd_array == np.nanpercentile(Kd_array, ci[0], interpolation='nearest'))[0][0]
+        #ci_2_idx = np.where(Kd_array == np.nanpercentile(Kd_array, ci[1], interpolation='nearest'))[0][0]
+        #ci_pos = [ci_1_idx, ci_2_idx]
+        #Kd_2p5, Kd_97p5 = Kd_array[ci_pos]
+        #fmax_2p5, fmax_97p5 = fmax_array[ci_pos]
+        #fmin_2p5, fmin_97p5 = fmin_array[ci_pos]
+        #results_dict[vID]['Kd_2p5'] = Kd_2p5
+        #results_dict[vID]['Kd_97p5'] = Kd_97p5
+        #results_dict[vID]['fmax_2p5'] = fmax_2p5
+        #results_dict[vID]['fmax_97p5'] = fmax_97p5
+        #results_dict[vID]['fmin_2p5'] = fmin_2p5
+        #results_dict[vID]['fmin_97p5'] = fmin_97p5
 
         # Doing it the (less correct) way just looks better
         results_dict[vID]['Kd_2p5'] = np.nanpercentile(Kd_array, ci[0], interpolation='nearest')
@@ -464,9 +475,7 @@ def bootstrap_fits(grouped, x, tight_fmaxes, tight_variants, label_dict, fmin_va
                                              results_dict[vID]['fmin'], 
                                              [results_dict[vID]['fmin_2p5'], results_dict[vID]['fmin_97p5']], 
                                              results_dict[vID]['fmax'], 
-                                             [results_dict[vID]['fmax_2p5'], results_dict[vID]['fmax_97p5']], 
-                                             nclust, tight_fmax_97p5, fmax_force)
-            plt.tight_layout()
+                                             [results_dict[vID]['fmax_2p5'], results_dict[vID]['fmax_97p5']], nclust, tight_fmax_97p5)
             for v in vID.split(';'):
                 file_name = "/{}_{}.pdf".format(v,label_dict[v])
                 plt.savefig(plot_dir+file_name, dpi=300)
@@ -478,7 +487,7 @@ def bootstrap_fits(grouped, x, tight_fmaxes, tight_variants, label_dict, fmin_va
 def plot_bootstrapped_Kd_fit(ax, x, y, y_ci, 
                                      Kd, Kd_ci,
                                      fmin, fmin_ci, 
-                                     fmax, fmax_ci, nclust, max_fmax, force_fmax,
+                                     fmax, fmax_ci, nclust, max_fmax,
                                      showParams=True, showR2=True):
     """
     Plot the bootstrapped double exponential decay
@@ -503,10 +512,7 @@ def plot_bootstrapped_Kd_fit(ax, x, y, y_ci,
     if ymax > max_fmax:
         ax.set_ylim(ymin, max_fmax)
     
-    #rsq = 1 - np.var(hill_equation(x, fmin, fmax, Kd) - y) / np.var(y)
-    ss_error = np.sum((hill_equation(x, fmin, fmax, Kd) - y)**2)
-    ss_total = np.sum((y - np.nanmean(y))**2)
-    rsq = 1 - ss_error/ss_total
+    rsq = 1 - np.var(hill_equation(x, fmin, fmax, Kd) - y) / np.var(y)
     
     y_lower = hill_equation(fit_x, fmin_ci[0], fmax_ci[0], Kd_ci[0])
     y_upper = hill_equation(fit_x, fmin_ci[1], fmax_ci[1], Kd_ci[1])
@@ -516,18 +522,18 @@ def plot_bootstrapped_Kd_fit(ax, x, y, y_ci,
     ymin, ymax = ax.get_ylim()
     ax.set_ylim(0.0, ymax)
 
-    # Make plot square:
-    #xmin, xmax = ax.get_xlim()
-    #ymin, ymax = ax.get_ylim()
-    ax.set_aspect('equal', 'datalim')
+    # Make plot square
+    x0,x1 = ax.get_xlim()
+    y0,y1 = ax.get_ylim()
+    ax.set_aspect(abs(x1-x0)/abs(y1-y0))
     
     if showParams and showR2:
         if Kd > 0.001:
-            label_txt = "$K_{{D}} = {:0.3f} ({:0.3f},{:0.3f})$ $nM$\n$R^2 = {:0.3f}$\nclusters = {}\nforced fmax = {}".format(
-                Kd, Kd_ci[0], Kd_ci[1], rsq, int(nclust), force_fmax)
+            label_txt = "$K_{{D}} = {:0.3f}$ $nM$\n$R^2 = {:0.3f}$\nclusters = {}".format(
+                Kd, rsq, int(nclust))
         else:
-            label_txt = "$K_{{D}} = {:0.3e} ({:0.3e},{:0.3e})$ $nM$\n$R^2 = {:0.3f}$\nclusters = {}\nforced fmax = {}".format(
-                Kd, Kd_ci[0], Kd_ci[1], rsq, int(nclust), force_fmax)
+            label_txt = "$K_{{D}} = {:0.3e}$ $nM$\n$R^2 = {:0.3f}$\nclusters = {}".format(
+                Kd, rsq, int(nclust))
         if Kd > np.median(plot_x):
             ax.text(0.05, 0.95, label_txt, transform=ax.transAxes, 
                     verticalalignment='top', horizontalalignment='left', fontsize=12, 
@@ -536,6 +542,7 @@ def plot_bootstrapped_Kd_fit(ax, x, y, y_ci,
             ax.text(0.95, 0.05, label_txt, transform=ax.transAxes, 
                     verticalalignment='bottom', horizontalalignment='right', fontsize=12, 
                     bbox={'facecolor': ax.get_facecolor(), 'alpha': 1.0, 'pad': 10, 'edgecolor':'none'})
+    
     return ax
 
 

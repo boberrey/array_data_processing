@@ -344,6 +344,7 @@ def bootstrap_fits(grouped, x, tight_fmaxes, tight_variants, label_dict, fmin_va
     results_dict = {}
     group_IDs = grouped.groups.keys()
     tight_fmax_2p5, tight_fmax_97p5 = np.nanpercentile(tight_fmaxes, q=[2.5,97.5])
+    fit_model = Model(hill_equation)
 
     for vID in group_IDs:
         data = grouped.get_group(vID).iloc[:,1:].values
@@ -356,58 +357,18 @@ def bootstrap_fits(grouped, x, tight_fmaxes, tight_variants, label_dict, fmin_va
         fmax_force = 0.0
         if all(median_fluorescence < tight_fmax_2p5) and (vID not in tight_variants):
             fmax_force = 1.0
-            #sampled_fmax = np.random.choice(tight_fmaxes, size=1)[0]
-            med_fmax = np.nanmedian(tight_fmaxes)
-            params = hill_equation_params(
-                fmax={"value": med_fmax, "vary": False}, 
-                Kd={"value":max(x)},
-                fmin={"value":fmin_val, "vary":False})
-        else:
-            if all(median_fluorescence < tight_fmax_2p5):
-                fmax_force = 2.0
-            params = hill_equation_params(
-                fmax={"value":max(median_fluorescence), "min":fmin_val},
-                Kd={"value":max(x)},
-                fmin={"value":fmin_val, "vary":False})
 
-        fit_model = Model(hill_equation)
-
-        try:
-            fit = fit_model.fit(median_fluorescence, params, x=x)
-        except:
-            print "Error while fitting {}".format(vID)
-            continue
-        
-        ## Things we want to report
-        # quality of fit:
-        ss_error = np.sum((fit.residual)**2)
-        ss_total = np.sum((median_fluorescence - np.nanmean(median_fluorescence))**2)
-        rsq = 1 - ss_error/ss_total
-        rmse = np.sqrt(np.nanmean((fit.residual)**2))
-
-        results_dict[vID] = {
-            'Kd': fit.params['Kd'].value, 
-            'fmax': fit.params['fmax'].value, 
-            'fmin': fit.params['fmin'].value, 
-            'rsq': rsq, 
-            'rmse': rmse,
-            'ier': fit.ier,
-            'Kd_stderr': fit.params['Kd'].stderr,
-            'fmax_stderr': fit.params['fmax'].stderr,
-            'fmin_stderr': fit.params['fmin'].stderr,
-            'nclust': nclust,
-            'forced_fmax': fmax_force
-        }
         
         # Now bootstrap parameters
         med_array = np.empty((nboot, len(x)))
-        Kd_array = np.empty(nboot)
-        fmax_array = np.empty(nboot)
-        fmin_array = np.empty(nboot)
+        boot_fits = {}
+
         for b in range(nboot):
-            sampled_fmax = np.random.choice(tight_fmaxes, size=1)[0]
+            # Sample medians with replacement
             meds = np.nanmedian(data[np.random.choice(nclust, size=nclust, replace=True)], axis=0)
+            # Enforce fmax distribution, if necessary
             if fmax_force == 1.0:
+                sampled_fmax = np.random.choice(tight_fmaxes, size=1)[0]
                 params = hill_equation_params(
                     fmax={"value": sampled_fmax, "vary": False}, 
                     Kd={"value":max(x)},
@@ -423,33 +384,55 @@ def bootstrap_fits(grouped, x, tight_fmaxes, tight_variants, label_dict, fmin_va
             except:
                 print "Error while bootstrap fitting {}".format(vID)
                 continue
-            med_array[b] = meds
-            Kd_array[b] = fit.params['Kd'].value
-            fmax_array[b] = fit.params['fmax'].value
-            fmin_array[b] = fit.params['fmin'].value
-        
-        # Get confidence intervals
-        # Take the 95% ci around the Kd, and whatever the corresponding fmax and fmin values are
-        # ci_1_idx = np.where(Kd_array == np.nanpercentile(Kd_array, ci[0], interpolation='nearest'))[0][0]
-        # ci_2_idx = np.where(Kd_array == np.nanpercentile(Kd_array, ci[1], interpolation='nearest'))[0][0]
-        # ci_pos = [ci_1_idx, ci_2_idx]
-        # Kd_2p5, Kd_97p5 = Kd_array[ci_pos]
-        # fmax_2p5, fmax_97p5 = fmax_array[ci_pos]
-        # fmin_2p5, fmin_97p5 = fmin_array[ci_pos]
-        # results_dict[vID]['Kd_2p5'] = Kd_2p5
-        # results_dict[vID]['Kd_97p5'] = Kd_97p5
-        # results_dict[vID]['fmax_2p5'] = fmax_2p5
-        # results_dict[vID]['fmax_97p5'] = fmax_97p5
-        # results_dict[vID]['fmin_2p5'] = fmin_2p5
-        # results_dict[vID]['fmin_97p5'] = fmin_97p5
 
-        # Doing it the (less correct) way just looks better
-        results_dict[vID]['Kd_2p5'] = np.nanpercentile(Kd_array, ci[0], interpolation='nearest')
-        results_dict[vID]['Kd_97p5'] = np.nanpercentile(Kd_array, ci[1], interpolation='nearest')
-        results_dict[vID]['fmax_2p5'] = np.nanpercentile(fmax_array, ci[0], interpolation='nearest')
-        results_dict[vID]['fmax_97p5'] = np.nanpercentile(fmax_array, ci[1], interpolation='nearest')
-        results_dict[vID]['fmin_2p5'] = np.nanpercentile(fmin_array, ci[0], interpolation='nearest')
-        results_dict[vID]['fmin_97p5'] = np.nanpercentile(fmin_array, ci[1], interpolation='nearest')
+            med_array[b] = meds
+            boot_fits[b] = {
+                'Kd': fit.params['Kd'].value, 
+                'fmax': fit.params['fmax'].value, 
+                'fmin': fit.params['fmin'].value, 
+                'Kd_stderr': fit.params['Kd'].stderr,
+                'fmax_stderr': fit.params['fmax'].stderr,
+                'fmin_stderr': fit.params['fmin'].stderr,
+            }
+
+        # Concatenate bootstrapped results
+        all_fits = pd.DataFrame(boot_fits).transpose()
+        param_names = all_fits.columns.tolist()
+        fit_data = np.hstack([np.percentile(all_fits.loc[:, param], [50, ci[0], ci[1]])
+                       for param in param_names])
+        fit_idx = np.hstack([['{}{}'.format(param_name, s) for s in ['', '_lb', '_ub']]
+                       for param_name in param_names])
+        fit_results = pd.Series(index=fit_idx, data=fit_data)
+
+
+        # Get rsq and rmse
+        resid = hill_equation(x, fit_results['fmin'], fit_results['fmax'], fit_results['Kd']) - median_fluorescence
+        ss_error = np.sum(resid**2)
+        ss_total = np.sum((median_fluorescence - np.nanmean(median_fluorescence))**2)
+        rsq = 1 - ss_error/ss_total
+        rmse = np.sqrt(np.nanmean(resid**2))
+
+        # Save final results
+        results_dict[vID] = {
+            'Kd': fit_results['Kd'], 
+            'Kd_2p5': fit_results['Kd_lb'],
+            'Kd_97p5': fit_results['Kd_ub'],
+            'fmax': fit_results['fmax'], 
+            'fmax_2p5': fit_results['fmax_lb'], 
+            'fmax_97p5': fit_results['fmax_ub'], 
+            'fmin': fit_results['fmin'], 
+            'fmin_2p5': fit_results['fmin_lb'], 
+            'fmin_97p5': fit_results['fmin_ub'], 
+            'Kd_stderr': fit_results['Kd_stderr'],
+            'fmax_stderr': fit_results['fmax_stderr'],
+            'fmin_stderr': fit_results['fmin_stderr'],
+            'rsq': rsq, 
+            'rmse': rmse,
+            'ier': fit.ier,
+            'nclust': nclust,
+            'forced_fmax': fmax_force
+        }
+        
         
         # Get median confidence intervals for plotting
         med_ci = np.nanpercentile(med_array, q=ci, axis=0)
