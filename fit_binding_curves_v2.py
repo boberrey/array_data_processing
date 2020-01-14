@@ -157,7 +157,7 @@ def main():
     chunk_list = list(make_chunks(variant_IDs, num_cores))
 
     # Create a new list of dataframes containing chunked variant_IDs
-    grouped_list = [merged_df[merged_df.variant_ID.isin(chunk)].copy().groupby('variant_ID') for chunk in chunk_list]
+    grouped_list = [mad_filt_df[mad_filt_df.variant_ID.isin(chunk)].copy().groupby('variant_ID') for chunk in chunk_list]
 
     # Perform initial median fits in parallel
     if num_cores > 1:

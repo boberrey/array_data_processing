@@ -87,6 +87,8 @@ def main():
         im_file = glob(image_dir + '/*.' + image_extension)[-1]
         im = Image.open(im_file)
         px = list(im.getdata())
+        # Remove 'blown out' values 
+        px = [x for x in px if x != 4095]
         if args.smart_min:
             min_val = np.mean(px) + 5*np.std(px)
         if args.smart_max:
@@ -94,8 +96,12 @@ def main():
             # Don't clean on less than 2000
             max_val = max(max_val, 2000)
 
-
-    print "Cleaning images with max_val = {} and min_val = {}".format(max_val, min_val)
+    if min_val >= max_val:
+        print "Image too bright, cleaning cannot proceed. Setting max_val to 5000 and min val to 4095."
+        max_val = 5000
+        min_val = 4095
+    else:
+        print "Cleaning images with max_val = {} and min_val = {}".format(max_val, min_val)
 
     # Run Clean image script
 

@@ -528,20 +528,24 @@ def invert_annot_numbering(annot, max_num):
 ### Double Mutant Heatmap Plotting ###
 ######################################
 
-def parse_point_mut_annot(annotation, out='swaps'):
+def parse_point_mut_annot(annotation, out='swaps', get_flank=False):
     """
     Pull out the individual mutations from a point mutant annotation.
     Return these point mutations as a list.
     """
-    swaps = annotation.split('_')[-1]
+    flank, swaps = annotation.split('_')
     individual_swaps = swaps.split(',')
     if out=='swaps':
+        if get_flank:
+            return flank, individual_swaps
         return individual_swaps
     if out=='pos':
         positions = []
         for swap in individual_swaps:
             num, text = re.split('(\d+)', swap)[1:]
             positions.append(int(num))
+        if get_flank:
+            return flank, sorted(positions)
         return sorted(positions)
 
 
@@ -586,6 +590,40 @@ def construct_double_mut_df(dm_df, value, annot_col="annotation"):
     df_data.apply(lambda x: fill_in_dm_frame(x, new_frame), axis=1)      
     
     return new_frame
+
+
+def add_singles_to_dm_df(sm_df, dm_df, value, annot_col="annotation"):
+    """
+    Add single mutant values to the diagonal of a prepared double mutant
+    heatmap
+    Inputs:
+        sm_df (DataFrame) -- A dataframe of single mutants
+        dm_df (DataFrame) -- A square dataframe of previously formated double mutants
+        value (str) -- column name indicating which value should be put in 
+            the dataframe
+        annot_col (str) -- the annotation column name
+    Outputs:
+        new_frame (DataFrame) -- modified dm dataframe with single mutants
+            in diagonal
+    """
+    # split mutations annotations and get value of interest:
+    list_data = sm_df.apply(lambda x: parse_point_mut_annot(x[annot_col])  + [x[value]], 
+                            axis=1).tolist()
+    
+    sm_data = pd.DataFrame(list_data)
+    sm_data.columns = ['first_mut', 'value']
+    #print sm_data.head()
+    
+    # Put single mutants in dm df
+    new_frame = dm_df.copy()
+    
+    for ix, row in sm_data.iterrows():
+        pos = row['first_mut']
+        val = row['value']
+        new_frame.loc[pos,pos] = val
+    
+    return new_frame
+
 
 
 def construct_position_median_dm_df(dm_df, value, annot_col="mut_annotation"):
@@ -641,7 +679,7 @@ def combine_double_mut_dfs(upper_df, lower_df):
     
     for i in range(nrows):
         for j in range(ncols):
-            if nrows - i < j:
+            if nrows - i <= j:
                 combined_df.iloc[i,j] = lower_df.iloc[i,j]
     
     combined_df.columns = lower_df.columns
@@ -705,6 +743,230 @@ def double_mutant_heatmap(ax, dm_df, mask_color="lightgrey", cmap="viridis", cba
         plt.xticks(rotation=0)
     
     return hm
+
+
+
+def single_mutant_heatmap(ax, sm_df, mask_color="lightgrey", cmap="viridis", cbar_label="", 
+    splitCells=None, splitColor="lightgrey", slim_ticks=True, kwargs={}):
+    """
+    Plot a single mutant heatmap.
+    Inputs:
+        ax (matplotlib axes class) -- The Axes instance on which to plot
+        sm_df (DataFrame) -- The dataframe containing data to plot
+        cbar_label (str) -- The label for the colorbar (color bar limits can be passed to kwargs under 'vmax'/'vmin')
+        splitCells (tuple of ints) -- should divisions between groups of cells be highlighted? Send a 2-member tuple
+            where the first int is the split frequency for rows and the second int is the split frequency for columns
+        splitColor (str) -- The color to be used between cells that are split
+    Output:
+        hm (matplotlib axes class) -- returns the modified axes object
+    """
+    # cast all data to float (to prevent sns.heatmap from being a baby)
+    plot_df = sm_df.astype(float)
+    
+    # this is how you change the 'mask' color
+    ax.set_facecolor(mask_color)
+    
+    hm = sns.heatmap(plot_df, ax=ax, cmap=cmap, cbar_kws={'label':cbar_label}, **kwargs)
+    
+    if splitCells:
+        ax.hlines([splitCells[0]*i for i in range(len(sm_df.index))], *ax.get_xlim(), color=splitColor, linewidth=1)
+        ax.vlines([splitCells[1]*i for i in range(len(sm_df.columns))], *ax.get_ylim(), color=splitColor, linewidth=1)
+
+    if slim_ticks:
+        xlabels = [item.get_text().split(">")[-1] for item in ax.get_xticklabels()]
+        ax.set_xticklabels(xlabels)
+        xtick_pos = ax.get_xticks()
+        x_pos_step = xtick_pos[1] - xtick_pos[0]
+        new_xpos = []
+        for i, pos in enumerate(xtick_pos):
+            if i % 3 == 0:
+                new_xpos.append(pos + x_pos_step*0.1)
+            elif i % 3 == 2:
+                new_xpos.append(pos - x_pos_step*0.1)
+            else:
+                new_xpos.append(pos)
+
+        ax.set_xticks(new_xpos)
+        plt.xticks(rotation=0)
+    
+    return hm
+
+
+
+def construct_single_mut_df(sm_df, value, annot_col="annotation"):
+    """
+    Construct a data frame for a set of single mutants, potentially
+    with multiple base contexts
+    Inputs:
+        sm_df (DataFrame) -- A dataframe of single mutants to be formatted into
+            the (context) dataframe. Must contain a column of 'Ago-style' single
+            mutant annotations.
+        value (str) -- the column name indicating which value should be put in
+            the single mutant dataframe.
+        annot_col (str) -- the annotation column name
+    Outputs:
+        new_frame (DataFrame) -- a context x mutant dataframe containing the indicated
+            value at each context and mutant position.
+    """
+    
+    # split mutations annotations and get value of interest:
+    flanks_and_swaps = sm_df.apply(lambda x: \
+                            parse_point_mut_annot(x[annot_col], get_flank=True), 
+                            axis=1).tolist()
+    flanks, swaps = zip(*flanks_and_swaps)
+    # Reformat
+    flanks = list(flanks)
+    swaps = [x[0] for x in swaps]
+    vals = sm_df[value].tolist()
+
+    df_data = pd.DataFrame([flanks, swaps, vals]).T
+    df_data.columns = ['flank', 'swap', 'value']
+    
+    # Get a sorted list of all possible base swaps:
+    keys = sorted(list(set(swaps)), 
+        key=natural_keys)
+
+    # Fill in square dataframe with desired double mutant values
+    new_frame = pd.DataFrame(index=list(set(flanks)), columns=keys)
+
+    def fill_in_sm_frame(row, df_to_fill):
+        # Apply function for filling in a square dataframe
+        flank = row['flank']
+        swap = row['swap']
+        value = row['value']
+        df_to_fill.loc[flank, swap] = value
+
+    df_data.apply(lambda x: fill_in_sm_frame(x, new_frame), axis=1)
+
+    
+    return new_frame
+
+
+
+##########################################
+### Cumulative Mutant Heatmap Plotting ###
+##########################################
+
+def is_cumulative_mut(row, wt_seq, flank = "AAAAA",
+                      cm_dict={"A": "T", "T": "A", "G": "C", "C": "G"}):
+    """
+    Manually determine if sequence is cumulative mutant
+    """
+    if row.sequence[:5] != flank or row.sequence[-5:] != flank:
+        # Make sure flank is correct
+        return "NA"
+    seq = row.sequence[5:-5]
+    if len(seq) != len(wt_seq):
+        # If seq lengths are not equal, not a cumulative mutant
+        return "NA"
+    start = 1
+    end = 1
+    in_mut = False
+    found_end = False
+    for i, (a, b) in enumerate(zip(seq, wt_seq)):
+        if a == b:
+            if in_mut:
+                # End of mutant stretch, mark end
+                end = i
+                found_end = True
+                in_mut = False
+        elif a == cm_dict[b]:
+            if found_end:
+                return "NA" # Already had one mutant stretch. Not continuous
+            if not in_mut:
+                start = i + 1
+                in_mut = True
+        else:
+            return "NA" # Not a complement mismatch
+    # If got all the way to end of sequence, set end
+    if in_mut and not found_end:
+        end = len(seq)
+    if not in_mut and not found_end:
+        # no mutations found
+        return "NA"
+    return "_".join(["polyA", "comp", str(start), "to", str(end)])
+
+
+def parse_cumulative_mut_annot(annotation, get_flank=False):
+    """
+    Pull out the beginning and end point of cumulative mutant.
+    Return these as a list.
+    """
+    flank, comp, start, to, end = annotation.split('_')
+    return [int(x) for x in [start, end]]
+
+def construct_cumulative_mut_df(cm_df, value, annot_col="annotation", reverse=True):
+    """
+    Construct a square data frame for cumulative mutants
+    Inputs:
+        cm_df (DataFrame) -- A dataframe of cumulative mutants to be formatted into
+            the square dataframe. Must contain a column of 'Ago-style' double
+            mutant annotations.
+        value (str) -- the column name indicating which value should be put in
+            the square double mutant dataframe.
+        annot_col (str) -- the annotation column name
+    Outputs:
+        new_frame (DataFrame) -- a square dataframe containing the indicated
+            value at double mutant coordinate positions. This dataframe will
+            be symmetric across the BL-TR diagonal.
+    """
+    
+    # split mutations annotations and get value of interest:
+    list_data = cm_df.apply(lambda x: \
+                            parse_cumulative_mut_annot(x[annot_col])  + [x[value]], 
+                            axis=1).tolist()
+    df_data = pd.DataFrame(list_data)
+    df_data.columns = ['start_pos', 'end_pos', 'value']
+    
+    # Get range of positions
+    first_pos = min(df_data.start_pos.values)
+    last_pos = max(df_data.end_pos.values)
+    all_pos = range(first_pos, last_pos + 1)
+    
+    # Reverse orientation to be guide-centric
+    if reverse:
+        new_start = last_pos - df_data.end_pos + 1
+        new_end = last_pos - df_data.start_pos + 1
+        df_data.start_pos = new_start
+        df_data.end_pos = new_end
+
+    # Fill in square dataframe with desired double mutant values
+    new_frame = pd.DataFrame(index=all_pos[::-1], columns=all_pos)
+
+    def fill_in_cm_frame(row, df_to_fill):
+        # Apply function for filling in a square dataframe
+        p1 = row['start_pos']
+        p2 = row['end_pos']
+        value = row['value']
+        df_to_fill.loc[p1, p2] = value
+        df_to_fill.loc[p2, p1] = value
+
+    df_data.apply(lambda x: fill_in_cm_frame(x, new_frame), axis=1)      
+    
+    return new_frame
+
+def cumulative_mutant_heatmap(ax, cm_df, mask_color="lightgrey", cmap="viridis", cbar_label="",  kwargs={}):
+    """
+    Plot a cumulative mutant heatmap.
+    Inputs:
+        ax (matplotlib axes class) -- The Axes instance on which to plot
+        cm_df (DataFrame) -- The square dataframe containing data to plot
+        cbar_label (str) -- The label for the colorbar (color bar limits can be passed to kwargs under 'vmax'/'vmin')
+    Output:
+        hm (matplotlib axes class) -- returns the modified axes object
+    """
+    # cast all data to float (to prevent sns.heatmap from being a baby)
+    plot_df = cm_df.astype(float)
+    
+    # this is how you change the 'mask' color
+    ax.set_facecolor(mask_color)
+    
+    hm = sns.heatmap(plot_df, ax=ax, cmap=cmap, square=True, cbar_kws={'label':cbar_label}, **kwargs)
+    
+    return hm
+
+
+
 
 
 ############################
@@ -912,5 +1174,89 @@ def plot_single_insertions_and_deletions(ax, full_df, val_col, wt_seq, lines=Fal
     return ax
 
 
+
+##################################
+### Homopolymer insertion plot ###
+##################################
+
+def parse_ins_mut(annotation, get_flank=False):
+    """
+    Retrieve the position, size, and identity of an insertion or bulge mutant
+    Assumes either single insertion or bulge annotation styles!
+    (single ins: polyA_8_9insG)
+    (bulge: polyA_PC_10insAAAAA)
+    """
+    # First determine if single insertion or bulge mutant
+    flank, PC, etc = annotation.split('_')
+    if PC == 'PC':
+        # bulge mutant
+        pos, ins_str = etc.split('ins')
+        base = ins_str[0]
+        size = len(ins_str)
+        return [int(pos), size, base]
+    elif PC.isdigit():
+        pos = int(PC)
+        _, base = etc.split('ins')
+        return [pos, 1, base]
+    # Incorectly formatted annotation
+    return [np.nan, np.nan, np.nan]
+
+
+def construct_ins_df(ins_df, value, annot_col="annotation", reverse=True):
+    """
+    Construct a homopolymer insertion dataframe for plotting
+    """
+    list_data = ins_df.apply(lambda x: parse_ins_mut(x[annot_col]) + [x[value]], axis=1).tolist()
+    df_data = pd.DataFrame(list_data)
+    df_data.columns = ['ins_pos', 'ins_size', 'ins_base', 'value']
+    
+    if reverse:
+        max_len = max(df_data.ins_pos.values)
+        new_pos = max_len - df_data.ins_pos + 1
+        df_data.ins_pos = new_pos
+    
+    return df_data
+
+
+def plot_homopolymer_insertions(ax, ins_df, sScale=5, pScale=0.15, shade_bkg=True,
+                                base_dict={'A': "#E24E42", 'G': "#E9B000", 'C': "#008F95", 'T': "#30415D"}):
+    """
+    Plot homopolymer insertions
+    ax = ax used for plotting
+    ins_df = DataFrame with insertion information
+    sScale = scale factor for point size
+    pScale = scale factor for position spread
+    shade_bkg = Should background be shaded in alternating colors
+    base_dict = colors to be used for each base
+    """
+    # Get required information in lists
+    ins_pos = ins_df.ins_pos.tolist()
+    ins_y = ins_df.value.tolist()
+    ins_bases = ins_df.ins_base.tolist()
+    ins_size = ins_df.ins_size.tolist()
+    ins_colors = [base_dict[x] for x in ins_bases]
+    # Adjust x positions
+    unique_pos = sorted(list(set(ins_pos)))
+    unique_bases = list(set(ins_bases))
+    nbases = len(unique_bases)
+    shift_pos = range(nbases) - np.mean(range(nbases))
+    shift_dict = dict(zip(unique_bases, [pScale*x for x in shift_pos]))
+    new_pos = []
+    for p, b in zip(ins_pos, ins_bases):
+        new_pos.append(p + shift_dict[b])
+        
+    # Now plot:
+    ax.scatter(new_pos, ins_y, c=ins_colors, s=[x*sScale for x in ins_size])
+    ax.set_xticks(ins_pos)
+    ax.set_xticklabels(ins_pos)
+    
+    # Shade, if necessary
+    if shade_bkg:
+        for i in unique_pos:
+            if i%2:
+                plt.axvspan((i) - 0.5, (i) + 0.5, facecolor='grey', alpha=0.1)
+    
+    ax.set_xlim(0.5, max(unique_pos) + 0.5)
+    return ax
 
 
