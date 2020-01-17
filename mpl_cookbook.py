@@ -24,6 +24,21 @@ solar_extra_colors = ['#3361A5', '#248AF3', '#14B3FF', '#88CEEF', '#C1D5DC', '#E
 solar_extra = mpl.colors.LinearSegmentedColormap.from_list('CustomMap', solar_extra_colors)
 solar_extra_r = mpl.colors.LinearSegmentedColormap.from_list('CustomMap', solar_extra_colors[::-1])
 
+# 'Sunrise' (aka chromatin viridis)
+sunrise_colors = ['#352A86', '#343DAE', '#0262E0', '#1389D2', '#2DB7A3', '#A5BE6A', '#F8BA43','#F6DA23','#F8FA0D']
+sunrise = mpl.colors.LinearSegmentedColormap.from_list('CustomMap', sunrise_colors)
+sunrise_r = mpl.colors.LinearSegmentedColormap.from_list('CustomMap', sunrise_colors[::-1])
+
+# Samba Night
+samba_colors = ['#1873CC', '#1798E5', '#00BFFF', '#4AC596', '#00CC00', '#A2E700', '#FFFF00','#FFD200','#FFA500']
+samba_night = mpl.colors.LinearSegmentedColormap.from_list('CustomMap', samba_colors)
+samba_night_r = mpl.colors.LinearSegmentedColormap.from_list('CustomMap', samba_colors[::-1])
+
+# Fireworks
+fireworks_colors = ['#ffffff', '#2488F0', '#7F3F98', '#E22929', '#FCB31A']
+fireworks = mpl.colors.LinearSegmentedColormap.from_list('CustomMap', fireworks_colors)
+fireworks_r = mpl.colors.LinearSegmentedColormap.from_list('CustomMap', fireworks_colors[::-1])
+
 
 
 
