@@ -228,12 +228,37 @@ def single_exp_decay(x, fmin, fmax, koff):
     return fmin + (fmax - fmin)*np.exp(-koff*x)
 
 
+# def single_exp_decay_params(fmax=None, fmin=None, koff=None):
+#     # Define parameters object
+#     params = Parameters()
+#     default_params = {
+#         "fmax":{"value": 1.0, "vary": True, "min": -np.inf, "max": np.inf},
+#         "fmin":{"value": 0.1, "vary": True, "min":0.0, "max":np.inf},
+#         "koff":{"value": 0.001, "vary": True, "min": -np.inf, "max": np.inf}
+
+#     }
+#     if fmax:
+#         for opt, val in fmax.items():
+#             default_params["fmax"][opt] = val
+#     if koff:
+#         for opt, val in koff.items():
+#             default_params["koff"][opt] = val
+#     if fmin:
+#         for opt, val in span.items():
+#             default_params["fmin"][opt] = val
+
+#     for p, dct in default_params.items():
+#         params.add(p, **dct)
+
+#     return params
+
+
 def single_exp_decay_params(fmax=None, span=None, koff=None):
     # Define parameters object
     params = Parameters()
     default_params = {
         "fmax":{"value": 1.0, "vary": True, "min": -np.inf, "max": np.inf},
-        "span":{"value": 0.1, "vary": True, "min":0.0, "max":np.inf},
+        "span":{"value": 0.7, "vary": True, "min":0.0, "max":np.inf},
         "koff":{"value": 0.001, "vary": True, "min": -np.inf, "max": np.inf}
 
     }
@@ -250,8 +275,8 @@ def single_exp_decay_params(fmax=None, span=None, koff=None):
     for p, dct in default_params.items():
         params.add(p, **dct)
 
-    # Enforce that fmax > fmin and that fmin <= 0.3*fmax
-    params.add("fmin", value=0.1, expr='max([0.3*fmax - span, 0.01])')
+    # Enforce that fmax > fmin and that fmin <= 0.5*fmax
+    params.add("fmin", value=0.1, expr='max([1.0*fmax - span, 0.0])')
     return params
 
 
@@ -379,6 +404,8 @@ def plot_bootstrapped_single_exp_fit(ax, x, y, y_ci,
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Normalized Fluorescence (a.u.)")
     ymin, ymax = ax.get_ylim()
+    # Don't let ymax get out of control
+    ymax = max(0.25, min(max(y)*1.5, ymax))
     ax.set_ylim(0.0, ymax)
     half_life = np.log(2.0)/koff
     

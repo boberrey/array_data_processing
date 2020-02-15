@@ -181,7 +181,7 @@ def main():
     chunk_list = list(make_chunks(variant_IDs, num_cores))
 
     # Create a new list of dataframes containing chunked variant_IDs
-    grouped_list = [merged_df[merged_df.variant_ID.isin(chunk)].copy().groupby('variant_ID') for chunk in chunk_list]
+    grouped_list = [mad_filt_df[mad_filt_df.variant_ID.isin(chunk)].copy().groupby('variant_ID') for chunk in chunk_list]
 
     # Now fit variants in parallel
     nboot = 1000
@@ -215,33 +215,35 @@ def MAD_filter_clusters(df, mad_cutoff=3.0):
 
 # Fitting functions:
 
-def single_exp_decay(x, fmin, fmax, koff):
+def single_exp_decay(x, fmin, fmax, kc):
     """
     Single exponential decay function. 
     Functions provided to lmfit Model must have dependent variable as first argument.
     x = time points 
     fmin = decay floor
     fmax = max signal
-    koff = decay rate
+    kc = decay rate
     """
-    return fmin + (fmax - fmin)*np.exp(-koff*x)
+    x = np.array(x)
+    return fmin + (fmax - fmin)*np.exp(-kc*x)
 
 
-def single_exp_decay_params(fmax=None, span=None, koff=None):
+
+def single_exp_decay_params(fmax=None, span=None, kc=None):
     # Define parameters object
     params = Parameters()
     default_params = {
         "fmax":{"value": 1.0, "vary": True, "min": -np.inf, "max": np.inf},
-        "span":{"value": 0.1, "vary": True, "min":0.0, "max":np.inf},
-        "koff":{"value": 0.001, "vary": True, "min": -np.inf, "max": np.inf}
+        "span":{"value": 0.1, "vary": True, "min":0.01, "max":np.inf},
+        "kc":{"value": 0.0001, "vary": True, "min": -np.inf, "max": np.inf}
 
     }
     if fmax:
         for opt, val in fmax.items():
             default_params["fmax"][opt] = val
-    if koff:
-        for opt, val in koff.items():
-            default_params["koff"][opt] = val
+    if kc:
+        for opt, val in kc.items():
+            default_params["kc"][opt] = val
     if span:
         for opt, val in span.items():
             default_params["span"][opt] = val
@@ -264,109 +266,126 @@ def bootstrap_fits(grouped, x, label_dict, nboot=1000, ci=[2.5,97.5], plot_dir=N
     """
     results_dict = {}
     group_IDs = grouped.groups.keys()
+    fit_model = Model(single_exp_decay)
+
     for vID in group_IDs:
         data = grouped.get_group(vID).iloc[:,1:].values
         nclust = data.shape[0]
         median_fluorescence = np.nanmedian(data, axis=0)
 
-        # Set initial fmax to first observed fluorescence value
-        #params = single_exp_decay_params(
-        #        fmax={"value": median_fluorescence[0], "vary": True},
-        #        span={"value": meds[0], "vary": True}
-        #        )
-        params = single_exp_decay_params()
+        # If fluorescence does not decay by >= 20%, then call it a 'non cleaver'
+        initial = np.median(median_fluorescence[:3])
+        final = np.median(median_fluorescence[-3:])
+        min_kc = min_kc = -np.log(0.8)/max(x)
+        if (initial - final)/initial < 0.3:
+            # Save non-fit results
+            results_dict[vID] = {
+                'kc': min_kc,
+                'kc_2p5': min_kc,
+                'kc_97p5': min_kc,
+                'fmax': initial,
+                'fmax_2p5': initial,
+                'fmax_97p5': initial,
+                'fmin': final, 
+                'fmin_2p5': final,
+                'fmin_97p5': final,
+                'kc_stderr': 0.0,
+                'fmax_stderr': 0.0,
+                'fmin_stderr': 0.0,
+                'rsq': 1.0, 
+                'rmse': 0.0,
+                'ier': 1.0,
+                'nclust': nclust,
+            }
+        else:
+            # Now bootstrap parameters
+            med_array = np.empty((nboot, len(x)))
+            boot_fits = {}
 
-        fit_model = Model(single_exp_decay)
+            for b in range(nboot):
+                # Sample medians with replacement
+                meds = np.nanmedian(data[np.random.choice(nclust, size=nclust, replace=True)], axis=0)
+                # Force fmax to be +/- 10% of the maximum fluorescence value
+                maxf = max(meds)
+                params = single_exp_decay_params(fmax={"value": maxf, "min": maxf - 0.1*maxf, "max": maxf + 0.1*maxf})
 
-        try:
-            fit = fit_model.fit(median_fluorescence, params, x=x)
-        except Exception as e:
-            print "Error while fitting {}".format(vID)
-            print str(e)
-            continue
-        
-        ## Things we want to report
-        # quality of fit:
-        ss_error = np.sum((fit.residual)**2)
-        ss_total = np.sum((median_fluorescence - np.nanmean(median_fluorescence))**2)
-        rsq = 1 - ss_error/ss_total
-        rmse = np.sqrt(np.nanmean((fit.residual)**2))
-        results_dict[vID] = {
-            'koff': fit.params['koff'].value, 
-            'fmax': fit.params['fmax'].value, 
-            'fmin': fit.params['fmin'].value, 
-            'rsq': rsq, 
-            'rmse': rmse,
-            'ier': fit.ier,
-            'koff_stderr': fit.params['koff'].stderr,
-            'fmax_stderr': fit.params['fmax'].stderr,
-            'fmin_stderr': fit.params['fmin'].stderr,
-            'nclust': nclust,
-        }
-        
-        # Now bootstrap parameters
-        med_array = np.empty((nboot, len(x)))
-        koff_array = np.empty(nboot)
-        fmax_array = np.empty(nboot)
-        fmin_array = np.empty(nboot)
-        for b in range(nboot):
-            #meds = data.sample(n=nclust, replace=True).median().values
-            meds = np.nanmedian(data[np.random.choice(nclust, size=nclust, replace=True)], axis=0)
-            #params = single_exp_decay_params(
-            #    fmax={"value": meds[0], "vary": True},
-            #    span={"value": meds[0], "vary": True}
-            #    )
-            params = single_exp_decay_params()
-            try:
-                fit = fit_model.fit(meds, params, x=x)
-            except:
-                print "Error while bootstrap fitting {}".format(vID)
-                continue
-            med_array[b] = meds
-            koff_array[b] = fit.params['koff'].value
-            fmax_array[b] = fit.params['fmax'].value
-            fmin_array[b] = fit.params['fmin'].value
-        
-        # Take the 95% ci around the koff, and whatever the corresponding fmax and fmin values are
-        ci_1_idx = np.where(koff_array == np.nanpercentile(koff_array, ci[0], interpolation='nearest'))[0][0]
-        ci_2_idx = np.where(koff_array == np.nanpercentile(koff_array, ci[1], interpolation='nearest'))[0][0]
-        ci_pos = [ci_1_idx, ci_2_idx]
-        koff_2p5, koff_97p5 = koff_array[ci_pos]
-        fmax_2p5, fmax_97p5 = fmax_array[ci_pos]
-        fmin_2p5, fmin_97p5 = fmin_array[ci_pos]
-        results_dict[vID]['koff_2p5'] = koff_2p5
-        results_dict[vID]['koff_97p5'] = koff_97p5
-        results_dict[vID]['fmax_2p5'] = fmax_2p5
-        results_dict[vID]['fmax_97p5'] = fmax_97p5
-        results_dict[vID]['fmin_2p5'] = fmin_2p5
-        results_dict[vID]['fmin_97p5'] = fmin_97p5
-        
-        # Get median confidence intervals for plotting
-        med_ci = np.nanpercentile(med_array, q=ci, axis=0)
-        yerr = abs(median_fluorescence - med_ci)
-        
-        # Plot fit
-        if plot_dir:
-            fig, ax = plt.subplots()
-            ax = plot_bootstrapped_single_exp_fit(ax, x, median_fluorescence, yerr, 
-                                             results_dict[vID]['koff'], 
-                                             [koff_2p5, koff_97p5], 
-                                             results_dict[vID]['fmin'], 
-                                             [fmin_2p5, fmin_97p5], 
-                                             results_dict[vID]['fmax'], 
-                                             [fmax_2p5, fmax_97p5])
-            for v in vID.split(';'):
-                file_name = "/{}_{}.pdf".format(v,label_dict[v])
-                plt.savefig(plot_dir+file_name, dpi=300)
-            plt.close()
+                try:
+                    fit = fit_model.fit(meds, params, x=x)
+                except:
+                    print "Error while bootstrap fitting {}".format(vID)
+                    continue
+                med_array[b] = meds
+                boot_fits[b] = {
+                    'kc': fit.params['kc'].value,
+                    'fmax': fit.params['fmax'].value,
+                    'fmin': fit.params['fmin'].value,
+                    'kc_stderr': fit.params['kc'].stderr,
+                    'fmax_stderr': fit.params['fmax'].stderr,
+                    'fmin_stderr': fit.params['fmin'].stderr
+                }
+            
+            # Concatenate bootstrapped results
+            all_fits = pd.DataFrame(boot_fits).transpose()
+            param_names = all_fits.columns.tolist()
+            fit_data = np.hstack([np.percentile(all_fits.loc[:, param], [50, ci[0], ci[1]])
+                           for param in param_names])
+            fit_idx = np.hstack([['{}{}'.format(param_name, s) for s in ['', '_lb', '_ub']]
+                           for param_name in param_names])
+            fit_results = pd.Series(index=fit_idx, data=fit_data)
+
+            # Get rsq and rmse
+            resid = single_exp_decay(x, fit_results['fmin'], fit_results['fmax'], fit_results['kc']) - median_fluorescence
+            ss_error = np.sum(resid**2)
+            ss_total = np.sum((median_fluorescence - np.nanmean(median_fluorescence))**2)
+            rsq = 1 - ss_error/ss_total
+            rmse = np.sqrt(np.nanmean(resid**2))
+            
+            # Save final results
+            results_dict[vID] = {
+                'kc': fit_results['kc'],
+                'kc_2p5': fit_results['kc_lb'],
+                'kc_97p5': fit_results['kc_ub'],
+                'fmax': fit_results['fmax'],
+                'fmax_2p5': fit_results['fmax_lb'],
+                'fmax_97p5': fit_results['fmax_ub'],
+                'fmin': fit_results['fmin'], 
+                'fmin_2p5': fit_results['fmin_lb'], 
+                'fmin_97p5': fit_results['fmin_ub'], 
+                'kc_stderr': fit_results['kc_stderr'],
+                'fmax_stderr': fit_results['fmax_stderr'],
+                'fmin_stderr': fit_results['fmin_stderr'],
+                'rsq': rsq, 
+                'rmse': rmse,
+                'ier': fit.ier,
+                'nclust': nclust,
+            }
+            
+            # Get median confidence intervals for plotting
+            med_ci = np.nanpercentile(med_array, q=ci, axis=0)
+            yerr = abs(median_fluorescence - med_ci)
+            
+            # Plot fit
+            if plot_dir:
+                fig, ax = plt.subplots()
+                ax = plot_bootstrapped_single_exp_fit(ax, x, median_fluorescence, yerr, 
+                                                 results_dict[vID]['kc'], 
+                                                 [results_dict[vID]['kc_2p5'], results_dict[vID]['kc_97p5']], 
+                                                 results_dict[vID]['fmin'], 
+                                                 [results_dict[vID]['fmin_2p5'], results_dict[vID]['fmin_97p5']], 
+                                                 results_dict[vID]['fmax'], 
+                                                 [results_dict[vID]['fmax_2p5'], results_dict[vID]['fmax_97p5']], nclust)
+                for v in vID.split(';'):
+                    file_name = "/{}_{}.pdf".format(v,label_dict[v])
+                    plt.savefig(plot_dir+file_name, dpi=300)
+                plt.close()
         
     return pd.DataFrame(results_dict).T
 
 
 def plot_bootstrapped_single_exp_fit(ax, x, y, y_ci, 
-                                     koff, koff_ci,
+                                     kc, kc_ci,
                                      fmin, fmin_ci, 
-                                     fmax, fmax_ci, 
+                                     fmax, fmax_ci, nclust,
                                      showParams=True, showR2=True):
     """
     Plot the bootstrapped double exponential decay
@@ -377,23 +396,25 @@ def plot_bootstrapped_single_exp_fit(ax, x, y, y_ci,
     xmin, xmax = ax.get_xlim()
     ax.set_xlim(-10.0,xmax)
     fit_x = np.linspace(0.0, xmax, 1000)
-    fit_y = single_exp_decay(fit_x, fmin, fmax, koff)
+    fit_y = single_exp_decay(fit_x, fmin, fmax, kc)
     ax.plot(fit_x, fit_y, c="black", linestyle="--")
     
-    rsq = 1 - np.var(single_exp_decay(x, fmin, fmax, koff) - y) / np.var(y)
+    rsq = 1 - np.var(single_exp_decay(x, fmin, fmax, kc) - y) / np.var(y)
     
-    y_lower = single_exp_decay(fit_x, fmin_ci[0], fmax_ci[0], koff_ci[0])
-    y_upper = single_exp_decay(fit_x, fmin_ci[1], fmax_ci[1], koff_ci[1])
+    y_lower = single_exp_decay(fit_x, fmin_ci[0], fmax_ci[0], kc_ci[0])
+    y_upper = single_exp_decay(fit_x, fmin_ci[1], fmax_ci[1], kc_ci[1])
     ax.fill_between(fit_x, y_lower, y_upper, alpha=0.2)
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Normalized Fluorescence (a.u.)")
     ymin, ymax = ax.get_ylim()
+    # Don't let ymax get out of control
+    ymax = max(0.25, min(max(y)*1.5, ymax))
     ax.set_ylim(0.0, ymax)
-    half_life = np.log(2.0)/koff
+    half_life = np.log(2.0)/kc
     
     if showParams and showR2:
-        label_txt = "$k_{{off}} = {:0.3e}$ $s^{{-1}}$\n$t_{{1/2}} = {:0.3f}$ $min$\n$R^2 = {:0.3f}$".format(
-                koff, half_life/60.0, rsq)
+        label_txt = "$k_{{c}} = {:0.3e}$ $s^{{-1}}$\n$t_{{1/2}} = {:0.3f}$ $min$\n$R^2 = {:0.3f}$\nnclust = {}".format(
+                kc, half_life/60.0, rsq, nclust)
         ax.text(0.95, 0.95, label_txt, transform=ax.transAxes, 
                 verticalalignment='top', horizontalalignment='right', fontsize=12, 
                 bbox={'facecolor': ax.get_facecolor(), 'alpha': 1.0, 'pad': 10, 'edgecolor':'none'})
