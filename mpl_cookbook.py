@@ -296,7 +296,7 @@ def reg_scatter(ax, x, y,
     xy_rmse = np.sqrt(np.mean((x - y)**2))
     
     # Make plot:
-    ax.scatter(x, y, **kwargs)
+    ax.scatter(x, y, zorder=4, **kwargs)
     xmin, xmax = ax.get_xlim()
     ymin, ymax = ax.get_ylim()
 
@@ -313,7 +313,7 @@ def reg_scatter(ax, x, y,
     
     if eqLine:
         # draw a diagonal line:
-        ax.plot([xmin, xmax], [ymin, ymax], ls=eq_params["ls"], c=eq_params["c"], linewidth=eq_params["linewidth"])
+        ax.plot([xmin, xmax], [ymin, ymax], ls=eq_params["ls"], c=eq_params["c"], linewidth=eq_params["linewidth"], zorder=1)
         # R2 doesn't change
         # xy_rmse doesn't change
     
@@ -323,7 +323,7 @@ def reg_scatter(ax, x, y,
         plotx = np.array(ax.get_xlim())
         ploty = plotx*linreg[0] + linreg[1]
         newy = x*linreg[0] + linreg[1]
-        ax.plot(plotx, ploty, ls=lin_params["ls"], c=lin_params["c"], linewidth=lin_params["linewidth"])
+        ax.plot(plotx, ploty, ls=lin_params["ls"], c=lin_params["c"], linewidth=lin_params["linewidth"], zorder=2)
         r2 = linreg[2]**2
         xy_rmse = np.sqrt(np.mean((y - newy)**2))
     
@@ -349,7 +349,7 @@ def reg_scatter(ax, x, y,
         cs = sp.interpolate.UnivariateSpline(x, y)
         xs = np.arange(min(x), max(x), (max(x)-min(x))/100)
         newy = cs(xs)
-        ax.plot(xs, newy, ls=spl_params["ls"], c=spl_params["c"], linewidth=spl_params["linewidth"])
+        ax.plot(xs, newy, ls=spl_params["ls"], c=spl_params["c"], linewidth=spl_params["linewidth"], zorder=3)
         # R^2 = 1 - RSS/TSS
         RSS = sum((y - cs(x))**2)
         TSS = sum((y - np.mean(y))**2)
@@ -434,7 +434,7 @@ def density_scatter(ax, x, y,
     xy_rmse = np.sqrt(np.mean((x - y)**2))
     
     # Make plot:
-    ax.scatter(x, y, c=z, cmap=cmap, edgecolors='', **kwargs)
+    ax.scatter(x, y, c=z, cmap=cmap, edgecolors='', zorder=4, **kwargs)
     xmin, xmax = ax.get_xlim()
     ymin, ymax = ax.get_ylim()
 
@@ -448,7 +448,7 @@ def density_scatter(ax, x, y,
     
     if eqLine:
         # draw a diagonal line:
-        ax.plot([xmin, xmax], [ymin, ymax], ls=eq_params["ls"], c=eq_params["c"], linewidth=eq_params["linewidth"])
+        ax.plot([xmin, xmax], [ymin, ymax], ls=eq_params["ls"], c=eq_params["c"], linewidth=eq_params["linewidth"], zorder=1)
         # R2 doesn't change
         # xy_rmse doesn't change
     
@@ -458,7 +458,7 @@ def density_scatter(ax, x, y,
         plotx = np.array(ax.get_xlim())
         ploty = plotx*linreg[0] + linreg[1]
         newy = x*linreg[0] + linreg[1]
-        ax.plot(plotx, ploty, ls=lin_params["ls"], c=lin_params["c"], linewidth=lin_params["linewidth"])
+        ax.plot(plotx, ploty, ls=lin_params["ls"], c=lin_params["c"], linewidth=lin_params["linewidth"], zorder=2)
         r2 = linreg[2]**2
         xy_rmse = np.sqrt(np.mean((y - newy)**2))
     
@@ -484,7 +484,7 @@ def density_scatter(ax, x, y,
         cs = sp.interpolate.UnivariateSpline(x, y)
         xs = np.arange(min(x), max(x), (max(x)-min(x))/100)
         newy = cs(xs)
-        ax.plot(xs, newy, ls=spl_params["ls"], c=spl_params["c"], linewidth=spl_params["linewidth"])
+        ax.plot(xs, newy, ls=spl_params["ls"], c=spl_params["c"], linewidth=spl_params["linewidth"], zorder=3)
         # R^2 = 1 - RSS/TSS
         RSS = sum((y - cs(x))**2)
         TSS = sum((y - np.mean(y))**2)
@@ -1194,7 +1194,7 @@ def plot_single_insertions_and_deletions(ax, full_df, val_col, wt_seq, lines=Fal
 ### Homopolymer insertion plot ###
 ##################################
 
-def parse_ins_mut(annotation, get_flank=False):
+def parse_ins_mut(annotation, seq, get_flank=False):
     """
     Retrieve the position, size, and identity of an insertion or bulge mutant
     Assumes either single insertion or bulge annotation styles!
@@ -1208,22 +1208,36 @@ def parse_ins_mut(annotation, get_flank=False):
         pos, ins_str = etc.split('ins')
         base = ins_str[0]
         size = len(ins_str)
-        return [int(pos), size, base]
+        pos = int(pos)
+        prior_base = seq[5:-5][pos-1]
+        return [pos, size, base, prior_base]
     elif PC.isdigit():
         pos = int(PC)
         _, base = etc.split('ins')
-        return [pos, 1, base]
+        prior_base = seq[5:-5][pos-1]
+        return [pos, 1, base, prior_base]
     # Incorectly formatted annotation
-    return [np.nan, np.nan, np.nan]
+    return [np.nan, np.nan, np.nan, np.nan]
 
 
-def construct_ins_df(ins_df, value, annot_col="annotation", reverse=True):
+def construct_ins_df(ins_df, value, annot_col="annotation", seq_col="sequence", reverse=True, expand=True):
     """
     Construct a homopolymer insertion dataframe for plotting
     """
-    list_data = ins_df.apply(lambda x: parse_ins_mut(x[annot_col]) + [x[value]], axis=1).tolist()
+    list_data = ins_df.apply(lambda x: parse_ins_mut(x[annot_col], x[seq_col]) + [x[value]], axis=1).tolist()
     df_data = pd.DataFrame(list_data)
-    df_data.columns = ['ins_pos', 'ins_size', 'ins_base', 'value']
+    df_data.columns = ['ins_pos', 'ins_size', 'ins_base', 'prior_base', 'value']
+    
+    # Expand insertions that can be on either side of a particular base
+    all_positions = sorted(list(set(df_data.ins_pos)))
+    
+    for p in all_positions[1:]:
+        
+        prior_base = set(df_data[df_data.ins_pos == p].prior_base.values).pop()
+        missing_df = df_data[(df_data.ins_pos == (p-1)) & (df_data.ins_base == prior_base)].copy()
+        missing_df.ins_pos = p
+        df_data = df_data.append(missing_df)
+        
     
     if reverse:
         max_len = max(df_data.ins_pos.values)

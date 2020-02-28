@@ -39,6 +39,9 @@ def pfunc_single(seq, material='dna', temp=37, sodium=0.15, magnesium=0.003):
     for f in glob(temp_prefix + '*'):
         os.remove(f)
     
+    # Decode output
+    pfunc_out = str(pfunc_out, "utf-8")
+
     # Parse output to collect partition function and ensemble energy
     lines = pfunc_out.split('\n')
     results = []
@@ -120,7 +123,7 @@ def pfunc_multi(seq_list, material='dna', temp=37, sodium=0.15, magnesium=0.003)
         magnesium = magnesium concentration in M
     """
     if len(seq_list) <= 1:
-        print "Error: must have >= 1 sequences in seq_list"
+        print("Error: must have >= 1 sequences in seq_list")
         return None
     
     # First, write a temporary file containing the necessary information for nupack
@@ -135,6 +138,9 @@ def pfunc_multi(seq_list, material='dna', temp=37, sodium=0.15, magnesium=0.003)
     pfunc_out = subprocess.check_output(['pfunc', '-multi', '-material', material, '-sodium', str(sodium), '-magnesium', str(magnesium), 
                      '-T', str(temp), temp_prefix])
     
+    # Decode output
+    pfunc_out = str(pfunc_out, "utf-8")
+
     # Remove temporary files
     for f in glob(temp_prefix + '*'):
         os.remove(f)
@@ -164,7 +170,7 @@ def mfe_multi(seq_list, material='dna', temp=37, sodium=0.15, magnesium=0.003):
         magnesium = magnesium concentration in M
     """
     if len(seq_list) <= 1:
-        print "Error: must have >= 1 sequences in seq_list"
+        print("Error: must have >= 1 sequences in seq_list")
         return None
     
     # First, write a temporary file containing the necessary information for nupack
