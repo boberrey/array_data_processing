@@ -215,3 +215,63 @@ def mfe_multi(seq_list, material='dna', temp=37, sodium=0.15, magnesium=0.003):
         
     return mfe, dot_bracket
 
+
+# Function to predict internal structure with RNAfold (which allows for constrained folding)
+
+def pfunc_RNAfold(seq, material='dna', temp=37, constraint=None):
+    """
+    Compute the partition function for a single ssDNA or ssRNA strand
+    RNAfold allows for constraining regions of the sequence, unlike nupack
+    Inputs:
+        seq = sequence string
+        material = either 'dna' or 'rna'
+        temp = temperature in C
+        constraint = string to constrain folding (x's indicate bases that cannot be part of structure)
+    Returns the ensemble energy in kcal/mol
+    """
+    
+    # First, write a temporary file containing the necessary information for nupack
+    temp_prefix = '_temp'
+    infile = temp_prefix+'.fa'
+    outfile = temp_prefix+'_out.fa'
+    with open(infile, 'w') as f:
+        f.write(">sequence1" + "\n")
+        f.write(seq + "\n")
+        if constraint:
+            f.write(constraint)
+    
+    if material == 'dna':
+        param_path = "/home/ben/RNAfoldParams/dna_mathews2004.par"
+    else:
+        param_path = None
+    
+    # Construct command
+    cmd_lst = ['RNAfold', '-p', '-d2', '--noconv', '--noPS', '-T', str(temp)]
+    
+    if param_path:
+        cmd_lst = cmd_lst + ['-P', param_path]
+    if constraint:
+        cmd_lst = cmd_lst + ['-C', '--enforceConstraint']
+    cmd_lst = cmd_lst + ['-i', infile]
+    
+    pfunc_out = subprocess.check_output(cmd_lst)
+    
+    # Decode output
+    pfunc_out = str(pfunc_out, "utf-8")
+
+    # Remove temporary files
+    for f in glob(temp_prefix + '*'):
+        os.remove(f)
+    
+    # Parse output to collect partition function and ensemble energy
+    lines = pfunc_out.split('\n')
+    ensemble = 0.0
+    for i, l in enumerate(lines):
+        if i == 3:
+            ensemble = float(re.findall(r'\[(.*?)\]', l)[0].strip())
+    
+    # Report ensemble energy in kcal/mol:
+    return [ensemble, lines]
+
+
+

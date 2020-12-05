@@ -39,6 +39,10 @@ fireworks_colors = ['#ffffff', '#2488F0', '#7F3F98', '#E22929', '#FCB31A']
 fireworks = mpl.colors.LinearSegmentedColormap.from_list('CustomMap', fireworks_colors)
 fireworks_r = mpl.colors.LinearSegmentedColormap.from_list('CustomMap', fireworks_colors[::-1])
 
+# Temperature (see: https://github.com/matplotlib/cmocean/blob/master/cmocean/rgb/thermal.py)
+temperature_colors = ['#042333','#0d3165','#35339c','#5e3f9a','#7e4e90','#9f5a88','#c1647a','#e17262','#f78b46','#fcae3c','#f6d347','#e8fa5b']
+temperature = mpl.colors.LinearSegmentedColormap.from_list('CustomMap', temperature_colors)
+temperature_r = mpl.colors.LinearSegmentedColormap.from_list('CustomMap', temperature_colors[::-1])
 
 
 
@@ -1190,6 +1194,22 @@ def plot_single_insertions_and_deletions(ax, full_df, val_col, wt_seq, lines=Fal
 
 
 
+def remove_diag(df, section='upper_left'):
+    new_df = df.copy()
+    if section == 'upper_left':
+        for i in range(len(new_df.index)):
+            for j in range(len(new_df.columns)):
+                if i >= len(new_df.columns) - j:
+                    new_df.iloc[i,j] = np.nan
+    if section == 'lower_right':
+        for i in range(len(new_df.index)):
+            for j in range(len(new_df.columns)):
+                if i < len(new_df.columns) - j - 1:
+                    new_df.iloc[i,j] = np.nan
+    return new_df
+
+
+
 ##################################
 ### Homopolymer insertion plot ###
 ##################################
@@ -1248,7 +1268,7 @@ def construct_ins_df(ins_df, value, annot_col="annotation", seq_col="sequence", 
 
 
 def plot_homopolymer_insertions(ax, ins_df, sScale=5, pScale=0.15, shade_bkg=True,
-                                base_dict={'A': "#E24E42", 'G': "#E9B000", 'C': "#008F95", 'T': "#30415D"}):
+                                base_dict={'A': "#E24E42", 'G': "#30415D", 'C': "#E9B000", 'T': "#008F95"}):
     """
     Plot homopolymer insertions
     ax = ax used for plotting
@@ -1266,7 +1286,7 @@ def plot_homopolymer_insertions(ax, ins_df, sScale=5, pScale=0.15, shade_bkg=Tru
     ins_colors = [base_dict[x] for x in ins_bases]
     # Adjust x positions
     unique_pos = sorted(list(set(ins_pos)))
-    unique_bases = list(set(ins_bases))
+    unique_bases = sorted(list(set(ins_bases)))
     nbases = len(unique_bases)
     shift_pos = range(nbases) - np.mean(range(nbases))
     shift_dict = dict(zip(unique_bases, [pScale*x for x in shift_pos]))
@@ -1287,5 +1307,132 @@ def plot_homopolymer_insertions(ax, ins_df, sScale=5, pScale=0.15, shade_bkg=Tru
     
     ax.set_xlim(0.5, max(unique_pos) + 0.5)
     return ax
+
+
+################################
+### Double deletion heatmaps ###
+################################
+
+
+def construct_double_del_df(df, value, guide_seq, seq_col='sequence', invert=True, flank='AAAAA'):
+    """
+    The annotations for these are kind of a mess
+    It will probably be easier at this point to just recreate the sequence and look it up
+    directly in the dataframe
+    """
+    
+    max_pos = len(guide_seq)
+    # Deletions at position 1 and max_pos are not true deletions, just point mutants.
+    # Start at position 2 and end at position max_pos - 1
+    
+    # Build new squre df of deletion positions
+    keys = list(range(2,max_pos))
+    new_frame = pd.DataFrame(index=keys[::-1], columns=keys)
+    
+    for i in keys:
+        for j in keys:
+            i1, i2 = sorted([i,j])
+            # Deincrement to account for labels...
+            i1 = i1-1
+            i2 = i2-1
+            # If i == j, only delete once
+            if i1 == i2:
+                del_seq = flank + guide_seq[:i1] + guide_seq[i1+1:] + flank
+            else:
+                del_seq = flank + guide_seq[:i1] + guide_seq[i1+1:i2] + guide_seq[i2+1:] + flank
+            
+            val = df[df[seq_col] == del_seq][value].values[0]
+            new_frame.loc[i,j] = val
+            new_frame.loc[j,i] = val
+    
+    if invert:
+        new_frame = new_frame[new_frame.columns[::-1]]
+        new_frame = new_frame.iloc[::-1]
+        new_frame.columns = keys
+        new_frame.index = keys[::-1]
+    
+    return new_frame
+
+
+def double_deletion_heatmap(ax, dd_df, mask_color="lightgrey", cmap="viridis", cbar_label="",  kwargs={}):
+    """
+    Plot a cumulative mutant heatmap.
+    Inputs:
+        ax (matplotlib axes class) -- The Axes instance on which to plot
+        dd_df (DataFrame) -- The square dataframe containing data to plot
+        cbar_label (str) -- The label for the colorbar (color bar limits can be passed to kwargs under 'vmax'/'vmin')
+    Output:
+        hm (matplotlib axes class) -- returns the modified axes object
+    """
+    # cast all data to float (to prevent sns.heatmap from being a baby)
+    plot_df = dd_df.astype(float)
+    
+    # this is how you change the 'mask' color
+    ax.set_facecolor(mask_color)
+    
+    hm = sns.heatmap(plot_df, ax=ax, cmap=cmap, square=True, cbar_kws={'label':cbar_label}, **kwargs)
+    
+    return hm
+
+
+#############################
+### Base context heatmaps ###
+#############################
+
+
+def parse_base_context(annot):
+    """
+    Return the 5' and 3' base contexts
+    """
+    c1, pc, c2 = annot.split('_')
+    return [c1.split('-')[1], c2.split('-')[0]]
+
+def construct_base_context_df(df, value, annot_col='mut_annotation', possible_contexts=None):
+    """
+    Given a df of base context mutants, construct the square df
+    of base context
+    """
+    list_data = df.apply(lambda x: parse_base_context(x[annot_col])  + [x[value]], 
+                            axis=1).tolist()
+    df_data = pd.DataFrame(list_data)
+    df_data.columns = ['context_1', 'context_2', 'value']
+    
+    # If possible contexts not provided, infer from data
+    if not possible_contexts:
+        possible_contexts = sorted(list(set(df_data.context_1.values.tolist() + df_data.context_2.values.tolist())))
+    
+    # Make square df:
+    new_frame = pd.DataFrame(index=possible_contexts[::-1], columns=possible_contexts)
+    def fill_in_context_frame(row, df_to_fill):
+        # Apply function for filling in a square dataframe
+        c1 = row['context_1']
+        c2 = row['context_2']
+        value = row['value']
+        df_to_fill.loc[c1, c2] = value
+
+    df_data.apply(lambda x: fill_in_context_frame(x, new_frame), axis=1)  
+    return new_frame
+
+
+def context_heatmap(ax, c_df, mask_color="lightgrey", cmap="viridis", cbar_label="",  kwargs={}):
+    """
+    Plot a cumulative mutant heatmap.
+    Inputs:
+        ax (matplotlib axes class) -- The Axes instance on which to plot
+        c_df (DataFrame) -- The square dataframe containing data to plot
+        cbar_label (str) -- The label for the colorbar (color bar limits can be passed to kwargs under 'vmax'/'vmin')
+    Output:
+        hm (matplotlib axes class) -- returns the modified axes object
+    """
+    # cast all data to float (to prevent sns.heatmap from being a baby)
+    plot_df = c_df.astype(float)
+    
+    # this is how you change the 'mask' color
+    ax.set_facecolor(mask_color)
+    
+    hm = sns.heatmap(plot_df, ax=ax, cmap=cmap, square=True, cbar_kws={'label':cbar_label}, **kwargs)
+    
+    return hm
+
 
 
